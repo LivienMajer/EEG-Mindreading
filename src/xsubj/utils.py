@@ -17,6 +17,18 @@ def load_config(path: str | Path) -> dict:
         return yaml.safe_load(f)
 
 
+def apply_overrides(cfg: dict, overrides: list[str]) -> dict:
+    """Apply KEY=VALUE overrides with dotted keys, e.g. model.arch=mlp seed=3 (values parsed as YAML)."""
+    for kv in overrides:
+        key, value = kv.split("=", 1)
+        *path, last = key.split(".")
+        node = cfg
+        for k in path:
+            node = node[k]
+        node[last] = yaml.safe_load(value)
+    return cfg
+
+
 def resolve(path: str | Path) -> Path:
     """Paths in the config are relative to the project root."""
     p = Path(path)

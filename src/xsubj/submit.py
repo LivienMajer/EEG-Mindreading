@@ -5,13 +5,14 @@ in its original order, holding the 102 candidate video IDs (1001..1102) from mos
 likely. Subjects with tst_stim labels (sub-01..04) are scored with the organisers' formula,
 which checks the format end to end.
 
-Default model: ensemble = mean of the ridge and the encoder predictions in CLIP space, ranked
-after per-candidate normalisation (dev: top-1 10.5%, top-5 35.3%, mean rank 16.8; without
-normalisation 11.0% / 33.1% / 17.7; ridge alone 9.8% / 33.1% / 18.9).
+Default model: ensemble = ridge + the mean of the encoders listed under `submit.encoders` in the
+config (9: 5x ShallowConvNet, 3x MLP, 1x EEGNet), equal weight in CLIP space, ranked after
+per-candidate normalisation. Dev (sub-01..04): top-1 10.8%, top-5 36.3%, mean rank 16.2
+(ridge + one ShallowConvNet: 10.5% / 35.3% / 16.8; ridge alone 9.8% / 33.1% / 18.9).
 
-    python -m src.xsubj.train                              # encoder -> models/xsubj/checkpoints/all/model.pt
     python -m src.xsubj.submit                             # ensemble, sub-01..06
     python -m src.xsubj.submit --model ridge               # ridge only (fits on all trn splits)
+    python -m src.xsubj.submit --encoders all mlp_s0       # other encoder set (checkpoint folder names)
     python -m src.xsubj.submit ... --subjects sub-01 sub-05 sub-06 --no-col-norm
 """
 from __future__ import annotations
@@ -51,8 +52,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="configs/xsubj.yaml")
     ap.add_argument("--model", choices=["ensemble", "encoder", "ridge"], default="ensemble")
-    ap.add_argument("--checkpoint", default="models/xsubj/checkpoints/all/model.pt",
-                    help="encoder checkpoint (from src.xsubj.train)")
+    ap.add_argument("--encoders", nargs="+", default=None,
+                    help="checkpoint folders under models/xsubj/checkpoints (default: submit.encoders)")
     ap.add_argument("--subjects", nargs="+", default=[f"sub-0{i}" for i in range(1, 7)])
     ap.add_argument("--col-norm", action=argparse.BooleanOptionalAction, default=True,
                     help="z-score each candidate's similarities over the subject's test recordings "
@@ -63,22 +64,25 @@ def main():
 
     import torch
     cfg = load_config(args.config)
+    names = args.encoders or cfg["submit"]["encoders"]
+    paths = [resolve("models/xsubj/checkpoints") / n / "model.pt" for n in names]
     if args.model in ("encoder", "ensemble"):
-        ck_cfg = torch.load(resolve(args.checkpoint), map_location="cpu", weights_only=False)["cfg"]
-        if args.model == "encoder":
-            cfg = ck_cfg
-        elif ck_cfg["preprocess"] != cfg["preprocess"] or ck_cfg["data"] != cfg["data"]:
-            raise SystemExit("encoder checkpoint was trained with other data/preprocessing settings "
-                             f"than {args.config}; retrain it with python -m src.xsubj.train")
+        for path in paths:
+            ck_cfg = torch.load(path, map_location="cpu", weights_only=False)["cfg"]
+            if ck_cfg["preprocess"] != cfg["preprocess"] or ck_cfg["data"] != cfg["data"]:
+                raise SystemExit(f"{path} was trained with other data/preprocessing settings than "
+                                 f"{args.config}; retrain it (see the submit section of the config)")
     seed_everything(cfg["seed"])
     data = load_preprocessed(cfg)
     bank = load_video_bank(cfg)
     cand_emb = bank.emb[bank.lookup(CANDIDATES.astype(str))]
 
+    encoders = []
     if args.model in ("encoder", "ensemble"):
-        model, ck = load_checkpoint(resolve(args.checkpoint), bank.dim)
-        model.to(get_device())
-        lut = {s: i for i, s in enumerate(ck["subject_list"])}
+        for path in paths:
+            model, ck = load_checkpoint(path, bank.dim)
+            encoders.append((model.to(get_device()), {s: i for i, s in enumerate(ck["subject_list"])}))
+        print(f"{len(encoders)} encoders: {' '.join(names)}")
     if args.model in ("ridge", "ensemble"):
         train = Trials([d for d in data if d.split == "trn"], bank, [])
         ridge = RidgeDecoder(cfg["ridge"], data[0].fs, data[0].tmin).fit(train.X, bank.emb[train.y])
@@ -92,8 +96,10 @@ def main():
     for subject in args.subjects:
         d = next(d for d in data if d.subject == subject and d.split == "tst")  # original recording order
         preds = []
-        if args.model in ("encoder", "ensemble"):
-            preds.append(embed(model, d.X, np.full(len(d.X), lut.get(subject, -1)), get_device()))
+        if encoders:  # mean of the encoders' unit vectors, renormalised -> one vote next to ridge
+            enc = np.mean([embed(m, d.X, np.full(len(d.X), lut.get(subject, -1)), get_device())
+                           for m, lut in encoders], 0)
+            preds.append(enc / np.linalg.norm(enc, axis=1, keepdims=True))
         if args.model in ("ridge", "ensemble"):
             preds.append(ridge.predict(d.X))
         pred = np.sum(preds, 0)

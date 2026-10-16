@@ -18,14 +18,13 @@ import json
 import time
 
 import numpy as np
-import yaml
 
 from src.xsubj.eeg.dataset import Trials
 from src.xsubj.eeg.preprocess import load_preprocessed
 from src.xsubj.metrics import average_repeats, permutation_test, retrieval_metrics
 from src.xsubj.nets.ridge import RidgeDecoder
 from src.xsubj.train import embed, train_split
-from src.xsubj.utils import get_device, load_config, resolve, seed_everything
+from src.xsubj.utils import apply_overrides, get_device, load_config, resolve, seed_everything
 from src.xsubj.video.embeddings import load_video_bank
 
 
@@ -63,13 +62,7 @@ def main():
     args = ap.parse_args()
 
     cfg = load_config(args.config)
-    for kv in args.set:
-        key, value = kv.split("=", 1)
-        *path, last = key.split(".")
-        node = cfg
-        for k in path:
-            node = node[k]
-        node[last] = yaml.safe_load(value)
+    apply_overrides(cfg, args.set)
     if args.epochs:
         cfg["train"]["epochs"] = args.epochs
     if args.video_emb:
