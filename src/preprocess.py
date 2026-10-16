@@ -10,8 +10,8 @@ def bandpass(X: np.ndarray, sfreq: float, l_freq: float = 0.1,
              h_freq: float = 40.0, order: int = 4) -> np.ndarray:
     """Zero-phase Butterworth bandpass. X: (n_trials, n_ch, n_times)."""
     nyq = sfreq / 2.0
-    sos = signal.butter(order, [l_freq / nyq, min(h_freq, nyq * 0.99)],
-                         btype="bandpass", output="sos")
+    wn = [l_freq / nyq, min(h_freq, nyq * 0.99) / nyq]
+    sos = signal.butter(order, wn, btype="bandpass", output="sos")
     return signal.sosfiltfilt(sos, X, axis=-1).astype(np.float32)
 
 
