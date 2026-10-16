@@ -223,8 +223,8 @@ def main():
         emb_fit = {v: a for v, a in emb_trn.items() if v not in set(hold_ids.tolist())}
     else:
         emb_fit = emb_trn
-    X_trn_p, X_cand, _ = build_target_space(emb_fit, emb_tst,
-                                            n_components=args.n_components)
+    X_trn_p, X_cand, space = build_target_space(emb_fit, emb_tst,
+                                                 n_components=args.n_components)
 
     # target row per trial: trial -> its video's row in X_trn_p
     V_ids = sorted(emb_fit)
@@ -241,8 +241,10 @@ def main():
                           temperature=args.temperature, seed=args.seed)
 
     if hold_ids is not None:
-        # rank held-out trials against the held-out videos' embeddings
-        C = X_trn_p[[row[int(v)] for v in hold_ids]]  # (N, d) candidates
+        # rank held-out trials against the held-out videos' embeddings,
+        # transformed through the SAME PCA that was fit on the fit videos
+        C_raw = video_matrix_pooled(emb_trn, hold_ids)
+        C = space["pca"].transform((C_raw - space["mu"]) / space["sd"])
         C = C / (np.linalg.norm(C, axis=1, keepdims=True) + 1e-8)
         ranked = rank_candidates(model, E_hold, C, cand_ids=hold_ids)
         y = v_hold
