@@ -17,6 +17,9 @@ models/
 *.zip
 *.tar
 *.gz
+*.jpg
+*.joblib
+*.ipynb 
 
 # Videos (large media files - keep only features/embeddings)
 *.mp4
