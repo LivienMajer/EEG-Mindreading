@@ -66,11 +66,16 @@ train:
     noise_std: 0.1
     scale: 0.1                 # amplitude scaling in [1-scale, 1+scale]
 
-ridge:
-  erp_bin: 0.05                # seconds per ERP bin
-  erp_tmax: 1.0                # ERP features from tmin..erp_tmax
+ridge:                         # EEG features; chosen by src.xsubj.sweep_features (mean rank 18.9)
+  erp: true                    # amplitude per channel in bins (the only block carrying information)
+  erp_bin: 0.01                # 10 ms = every sample at 100 Hz
+  erp_tmin: 0.05               # decoding curve: information from ~50 ms, peak 100-300 ms,
+  erp_tmax: 0.6                #   gone after ~600 ms
+  bandpower: false             # log band power: at chance on its own, hurts mean rank when added
   bands: {delta: [1, 4], theta: [4, 8], alpha: [8, 13], beta: [13, 30], gamma: [30, 40]}
-  alphas: [0.1, 1, 10, 100, 1000, 10000, 100000]
+  riemann: false               # tangent-space covariance: at chance on its own
+  riemann_bands: null
+  alphas: [0.1, 1, 10, 100, 1000, 10000, 100000, 1000000]
 
 eval:
   k_candidates: [2, 10, 50, all]
