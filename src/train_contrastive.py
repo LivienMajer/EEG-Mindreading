@@ -1,8 +1,11 @@
 """Contrastive (InfoNCE / CLIP-style) training of the EEG encoder.
 
-Aligns EEG embeddings with video embeddings so that at test time we can
-match an EEG trial to the right candidate video by cosine similarity.
+**Superseded:** the challenge-adapted version lives in
+``src/contrastive_pipeline.py`` (branch `contrastive-alignment`), which
+mirrors the exact candidate-matching protocol and uses the real challenge
+data format. This module only keeps the reusable loss functions.
 """
+
 
 from __future__ import annotations
 
@@ -92,21 +95,6 @@ def train(X: np.ndarray, y: np.ndarray, vid_embs: dict, sfreq: float,
 
 
 if __name__ == "__main__":
-    p = argparse.ArgumentParser()
-    p.add_argument("--config", default="configs/default.yaml")
-    p.add_argument("--data", default="data/train")
-    p.add_argument("--video-embeddings", default="data/video_embeddings.npz")
-    args = p.parse_args()
-
-    import yaml
-    cfg = yaml.safe_load(open(args.config))["training"]
-
-    from .load_data import load_all
-    from .preprocess import bandpass, notch, reject_artifacts
-
-    data = load_all(args.data, sfreq=cfg["sfreq"])
-    X = notch(bandpass(data.X, cfg["sfreq"], **cfg["filter"]), cfg["sfreq"])
-    X = X[reject_artifacts(X, cfg["artifact_threshold_uv"])]
-    vid_embs = dict(np.load(args.video_embeddings))
-
-    train(X, data.y, vid_embs, **cfg)
+    raise SystemExit(
+        "Use src.contrastive_pipeline (challenge-adapted, branch "
+        "'contrastive-alignment') instead of this module.")

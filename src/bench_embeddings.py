@@ -33,6 +33,48 @@ WINDOWS = {"snr": (5, 35), "org": (5, 60)}
 KEY_TEMPLATE = "{vid:05d}_f{k:02d}"
 
 
+def load_pooled(path, cache: bool = True) -> dict:
+    """Memory-safe embedding loader -> {int video_id: (D,) mean-of-frames}.
+
+    Frame-level npz files (keys '00001_f00'..) are HUGE for high-dim models
+    (alexnet-f3: 8000 frames x 140k dims = 4.5 GB); materializing them with
+    dict(np.load()) swaps out 16 GB machines. This streams one frame batch at
+    a time, pools per video, and (cache=True) saves the result as
+    '<stem>_pooled.npz' for instant reloads. Video-level npz files (keys are
+    plain ids) pass through unchanged.
+    """
+    path = Path(path)
+    cache_path = path.with_name(path.stem + "_pooled.npz")
+    if cache and cache_path.exists():
+        z = np.load(cache_path)
+        return {int(k): z[k] for k in z.files}
+    z = np.load(path)
+    keys = z.files
+    out = {}
+    if "_" in keys[0]:  # frame-level -> pool
+        groups: dict[int, list] = {}
+        for k in keys:
+            groups.setdefault(int(k.split("_")[0]), []).append(k)
+        for vid, ks in groups.items():
+            out[vid] = np.mean([z[k] for k in ks], axis=0)
+    else:  # already video-level
+        for k in keys:
+            out[int(k)] = z[k]
+    if cache:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        np.savez(cache_path, **{f"{v:05d}": a for v, a in out.items()})
+    return out
+
+
+def video_matrix_pooled(emb: dict, video_ids, agg: str = "mean"):
+    """emb: {int vid: (D,) pooled embedding} -> (n_videos, D) float32."""
+    missing = [v for v in video_ids if int(v) not in emb]
+    if missing:
+        raise KeyError(f"{len(missing)} videos missing in embeddings, "
+                       f"e.g. {missing[:5]}")
+    return np.stack([emb[int(v)] for v in video_ids]).astype(np.float32)
+
+
 class HighDimPCA:
     """PCA for n_samples << n_features (e.g. 900 trials x 140k features).
 
@@ -43,8 +85,10 @@ class HighDimPCA:
     Interface follows sklearn: fit(X) -> self, transform(X) -> projection.
     """
 
-    def __init__(self, variance_ratio=0.95):
+    def __init__(self, variance_ratio=0.95, n_components=None):
+        """n_components (if set) overrides variance_ratio."""
         self.variance_ratio = variance_ratio
+        self.n_components = n_components
 
     def fit(self, X):
         self.mean_ = X.mean(axis=0)
@@ -52,10 +96,13 @@ class HighDimPCA:
         G = Xc @ Xc.T / (len(Xc) - 1)          # (n, n) Gram
         evals, evecs = np.linalg.eigh(G)       # ascending order
         evals = np.maximum(evals[::-1], 0.0)   # descending, clip numerical noise
-        total = evals.sum()
-        n_keep = int(np.searchsorted(np.cumsum(evals) / total,
-                                     self.variance_ratio) + 1)
-        n_keep = min(n_keep, len(evals) - 1)
+        if self.n_components is not None:
+            n_keep = min(self.n_components, len(evals))
+        else:
+            total = evals.sum()
+            n_keep = int(np.searchsorted(np.cumsum(evals) / total,
+                                         self.variance_ratio) + 1)
+            n_keep = min(n_keep, len(evals) - 1)
         # components in feature space: rows of Xc.T @ evec, normalized so that
         # components_ are unit-norm and orthonormal (dual PCA).
         ek = evecs[:, ::-1][:, :n_keep]        # columns follow descending evals
@@ -136,18 +183,18 @@ def main():
     p.add_argument("--data-dir", required=True)
     p.add_argument("--emb-train", required=True, help="npz with train-video embeddings")
     p.add_argument("--emb-test", required=True, help="npz with test-video embeddings")
-    p.add_argument("--agg", default="mean", choices=["mean", "concat"])
+    p.add_argument("--agg", default="mean", choices=["mean"])
     p.add_argument("--window", default="snr", choices=list(WINDOWS))
     p.add_argument("--subjects", nargs="+", default=["01", "02", "03", "04"])
     args = p.parse_args()
 
     root = Path(args.data_dir)
-    emb_trn = dict(np.load(args.emb_train))
-    emb_tst = dict(np.load(args.emb_test))
+    emb_trn = load_pooled(args.emb_train)
+    emb_tst = load_pooled(args.emb_test)
     t_win = WINDOWS[args.window]
 
     # candidate matrix is shared across subjects: rows = TEST_VIDEO_IDS sorted
-    X_cand = video_matrix(emb_tst, TEST_VIDEO_IDS, agg=args.agg)
+    X_cand = video_matrix_pooled(emb_tst, TEST_VIDEO_IDS, agg=args.agg)
 
     results = {}
     for sub in args.subjects:
@@ -155,7 +202,7 @@ def main():
         # EEG: decimate, take same window (precomputed on 100 Hz grid)
         E = decimate(trn.X, 5, axis=-1, ftype="fir", zero_phase=True)
         E_full = E[:, :, t_win[0]:t_win[1]]  # windowed EEG target
-        X_trn = video_matrix(emb_trn, trn.video_ids, agg=args.agg)
+        X_trn = video_matrix_pooled(emb_trn, trn.video_ids, agg=args.agg)
 
         bundle = fit_forward(X_trn, E_full)
         pred_cand = predict_eeg(bundle, X_cand)  # (102, 17, t_win)
