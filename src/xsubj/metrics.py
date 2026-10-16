@@ -40,6 +40,8 @@ def retrieval_metrics(pred: np.ndarray, y: np.ndarray, bank_emb: np.ndarray, ks,
         if kk > 5:
             out[f"top5@{k}"] = float((ranks < 5).mean())
         out[f"chance1@{k}"] = 1.0 / kk
+        if k == "all":
+            out["mean_rank@all"] = float(ranks.mean() + 1)    # 1 = best, chance (n+1)/2
     return out
 
 

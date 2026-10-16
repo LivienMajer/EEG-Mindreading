@@ -92,7 +92,7 @@ def main():
     for m, res in results.items():
         per_subj = dict(res)
         for name in ("raw", "colnorm"):
-            keys = [k for k in next(iter(per_subj.values()))[name] if k.startswith(("top", "chance"))]
+            keys = [k for k in next(iter(per_subj.values()))[name] if k.startswith(("top", "chance", "mean_rank"))]
             mean = {k: float(np.mean([r[name][k] for r in per_subj.values()])) for k in keys}
             results[m][f"_mean_{name}"] = mean
             print(f"{m:8s}{name:8s}", "  ".join(f"{k}={v:.3f}" for k, v in mean.items()))
