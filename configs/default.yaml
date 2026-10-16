@@ -1,10 +1,10 @@
 """Config for the full pipeline. Adjust once data format is known."""
 
 data:
-  sfreq: 250            # sampling rate (Hz) -- CONFIRM with the actual data
+  sfreq: 500            # confirmed: 500 Hz, 17 ch, 1500 samples (3 s) per trial
   filter:
-    l_freq: 0.1
-    h_freq: 40.0
+    l_freq: 0.5
+    h_freq: 45.0
   artifact_threshold_uv: 150
 
 features:
@@ -14,12 +14,13 @@ features:
     alpha: [8, 13]
     beta: [13, 30]
     gamma: [30, 45]
+  high_gamma: [45, 90]   # possible at 500 Hz - test whether it carries signal
 
 model:
   ridge_alpha: 10.0
 
 training:
-  sfreq: 250
+  sfreq: 500
   t_min: 0.0
   t_max: 3.0
   embed_dim: 512
@@ -28,8 +29,8 @@ training:
   lr: 0.0003
   temperature: 0.07
   filter:
-    l_freq: 0.1
-    h_freq: 40.0
+    l_freq: 0.5
+    h_freq: 45.0
   artifact_threshold_uv: 150
   device: cpu             # set to cuda if GPU available
   model_path: models/eeg_encoder.pt
