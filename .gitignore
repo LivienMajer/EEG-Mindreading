@@ -1,6 +1,6 @@
 # Data & models
 data/
-models/
+models/*
 *.fif
 *.edf
 *.bdf
@@ -51,3 +51,18 @@ Thumbs.db
 *.log
 wandb/
 lightning_logs/
+
+# Exceptions: final submission weights, video features and predictions
+# (the challenge requires weights and predictions in the repository)
+!models/xsubj/
+models/xsubj/*
+!models/xsubj/checkpoints/
+models/xsubj/checkpoints/*
+!models/xsubj/checkpoints/all/
+!models/xsubj/checkpoints/all/model.pt
+!models/xsubj/checkpoints/ridge/
+!models/xsubj/checkpoints/ridge/ridge.joblib
+!models/xsubj/features/
+models/xsubj/features/*
+!models/xsubj/features/clip_vitb32.npz
+!submissions/sub-0[56]_ranked_candidate_list.npy
