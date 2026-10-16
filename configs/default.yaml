@@ -5,7 +5,10 @@ data:
   filter:
     l_freq: 0.5
     h_freq: 45.0
-  artifact_threshold_uv: 150
+  artifact_threshold_uv: null    # data is pre-normalized (std~0.5/ch), no µV rejection
+  time_window: [5, 60]           # samples @ 100 Hz after decimation = 50-600 ms
+                                # (organizer baseline window, early visual responses)
+  decimate: 5                    # 500 -> 100 Hz via FIR zero-phase decimate
 
 features:
   bands:
@@ -21,8 +24,8 @@ model:
 
 training:
   sfreq: 500
-  t_min: 0.0
-  t_max: 3.0
+  decimate: 5
+  time_window: [5, 60]   # samples @ 100 Hz = 50-600 ms post-onset
   embed_dim: 512
   batch_size: 64
   epochs: 50
@@ -31,7 +34,6 @@ training:
   filter:
     l_freq: 0.5
     h_freq: 45.0
-  artifact_threshold_uv: 150
   device: cpu             # set to cuda if GPU available
   model_path: models/eeg_encoder.pt
 
