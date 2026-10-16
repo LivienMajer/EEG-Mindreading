@@ -1,0 +1,40 @@
+"""Config for the full pipeline. Adjust once data format is known."""
+
+data:
+  sfreq: 250            # sampling rate (Hz) -- CONFIRM with the actual data
+  filter:
+    l_freq: 0.1
+    h_freq: 40.0
+  artifact_threshold_uv: 150
+
+features:
+  bands:
+    delta: [1, 4]
+    theta: [4, 8]
+    alpha: [8, 13]
+    beta: [13, 30]
+    gamma: [30, 45]
+
+model:
+  ridge_alpha: 10.0
+
+training:
+  sfreq: 250
+  t_min: 0.0
+  t_max: 3.0
+  embed_dim: 512
+  batch_size: 64
+  epochs: 50
+  lr: 0.0003
+  temperature: 0.07
+  filter:
+    l_freq: 0.1
+    h_freq: 40.0
+  artifact_threshold_uv: 150
+  device: cpu             # set to cuda if GPU available
+  model_path: models/eeg_encoder.pt
+
+video:
+  model: ViT-B-32
+  pretrained: openai
+  n_frames: 8
