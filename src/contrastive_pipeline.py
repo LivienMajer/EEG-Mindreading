@@ -144,13 +144,16 @@ def infonce(ze, zv, temperature=0.1):
     return loss, logits.argmax(1) == labels
 
 
-def rank_candidates(model, E_tst_win, X_cand, device="cpu", batch_size=512):
-    """(102, 17, w) test EEG -> (102, 102) similarity -> candidate ranking.
+def rank_candidates(model, E_tst_win, X_cand, device="cpu", batch_size=512,
+                    cand_ids=None):
+    """(n, 17, w) test EEG -> (n, n_cand) similarity -> candidate ranking.
 
-    Returns ranked video IDs (102, 102), rows follow the INPUT order
-    (i.e., submission order if E_tst_win is the unshuffled tst.npy).
+    Returns ranked candidate video IDs (n, n_cand); rows follow INPUT order.
+    cand_ids: 1-D array of candidate video IDs (default: TEST_VIDEO_IDS).
     """
     import torch
+    if cand_ids is None:
+        cand_ids = TEST_VIDEO_IDS
     model.eval()
     with torch.no_grad():
         Z = []
@@ -161,8 +164,8 @@ def rank_candidates(model, E_tst_win, X_cand, device="cpu", batch_size=512):
             Z.append((z / (z.norm(dim=-1, keepdims=True) + 1e-8)).cpu().numpy())
         Z = np.concatenate(Z)
     Zc = X_cand / (np.linalg.norm(X_cand, axis=1, keepdims=True) + 1e-8)
-    S = Z @ Zc.T                                   # (102, 102) cosine sim
-    return TEST_VIDEO_IDS[np.argsort(-S, axis=1)]
+    S = Z @ Zc.T                                   # (n, n_cand) cosine sim
+    return cand_ids[np.argsort(-S, axis=1)]
 
 
 # ---------------------------------------------------------------------------
@@ -183,6 +186,10 @@ def main():
     p.add_argument("--temperature", type=float, default=0.1)
     p.add_argument("--lr", type=float, default=3e-4)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--holdout", type=int, default=0,
+                   help="if >0: hold out N train videos as PSEUDO candidates "
+                        "and evaluate ranking them (validation WITHOUT "
+                        "touching tst labels). 0 = train on all, eval on tst.")
     args = p.parse_args()
 
     root = Path(args.data_dir)
@@ -191,22 +198,71 @@ def main():
 
     trn = load_train_subject(root, args.sub)
     E_full = eeg_window(trn.X)                    # (n_trials, 17, 30)
-    X_trn_p, X_cand, _ = build_target_space(emb_trn, emb_tst,
+
+    rng = np.random.default_rng(args.seed)
+    if args.holdout > 0:
+        # ---- pseudo-candidate validation (Exp #2) ------------------------
+        # hold out N of THIS subject's train videos; train on the rest,
+        # then rank the held-out videos' trials against all N candidates.
+        # Uses ONLY train data -> tst labels stay untouched.
+        vids = np.array(sorted(set(trn.video_ids.tolist())))
+        pick = rng.permutation(len(vids))[:args.holdout]
+        hold_ids = vids[pick]
+        is_hold = np.isin(trn.video_ids, hold_ids)
+        E_fit, v_fit = E_full[~is_hold], trn.video_ids[~is_hold]
+        E_hold, v_hold = E_full[is_hold], trn.video_ids[is_hold]
+        print(f"holdout: training on {len(E_fit)} trials, "
+              f"ranking {len(E_hold)} held-out trials over "
+              f"{args.holdout} candidates")
+    else:
+        E_fit, v_fit = E_full, trn.video_ids
+        hold_ids = None
+
+    # target space: PCA on train-video embeddings of the FIT videos only
+    if hold_ids is not None:
+        emb_fit = {v: a for v, a in emb_trn.items() if v not in set(hold_ids.tolist())}
+    else:
+        emb_fit = emb_trn
+    X_trn_p, X_cand, _ = build_target_space(emb_fit, emb_tst,
                                             n_components=args.n_components)
 
     # target row per trial: trial -> its video's row in X_trn_p
-    V_ids = sorted(emb_trn)
+    V_ids = sorted(emb_fit)
     row = {v: i for i, v in enumerate(V_ids)}
-    V = X_trn_p[[row[int(v)] for v in trn.video_ids]]
+    V = X_trn_p[[row[int(v)] for v in v_fit]]
     V = V / (np.linalg.norm(V, axis=1, keepdims=True) + 1e-8)
 
-    print(f"sub-{args.sub}: {len(trn.X)} trials, target dim {V.shape[1]}, "
+    print(f"sub-{args.sub}: {len(E_fit)} trials, target dim {V.shape[1]}, "
           f"window {T_WIN} @{100} Hz")
-    model = train_infonce(E_full, V, trn.video_ids, V_ids,
+    model = train_infonce(E_fit, V, v_fit, V_ids,
                           embed_dim=args.embed_dim,
                           batch_size=args.batch_size,
                           epochs=args.epochs, lr=args.lr,
                           temperature=args.temperature, seed=args.seed)
+
+    if hold_ids is not None:
+        # rank held-out trials against the held-out videos' embeddings
+        C = X_trn_p[[row[int(v)] for v in hold_ids]]  # (N, d) candidates
+        C = C / (np.linalg.norm(C, axis=1, keepdims=True) + 1e-8)
+        ranked = rank_candidates(model, E_hold, C, cand_ids=hold_ids)
+        y = v_hold
+        r = ranked
+        t1 = float((r[:, 0] == y).mean())
+        t5 = float((r[:, :5] == y[:, None]).any(1).mean())
+        print(f"\nsub-{args.sub} HOLDOUT RESULT: top-1 {t1:.4f}  "
+              f"top-5 {t5:.4f}  (chance {1/len(hold_ids):.4f}/"
+              f"{min(5, len(hold_ids))/len(hold_ids):.4f}, "
+              f"{len(hold_ids)} candidates)")
+        from .log_score import log_score
+        emb_tag = Path(args.emb_train).stem.replace("_pooled", "")
+        log_score(experiment="infonce-holdout", subject=args.sub,
+                  embedding=emb_tag, window=f"{T_WIN}",
+                  n_components=args.n_components, embed_dim=args.embed_dim,
+                  epochs=args.epochs, batch_size=args.batch_size,
+                  temperature=args.temperature, lr=args.lr,
+                  seed=args.seed, holdout=args.holdout,
+                  top1=t1, top5=t5, note="")
+        return
 
     tst = load_test_subject(root, args.sub)
     E_tst = eeg_window(tst.X)
@@ -219,6 +275,14 @@ def main():
         t5 = float((ranked_e[:, :5] == tst.y[order][:, None]).any(1).mean())
         print(f"\nsub-{args.sub} RESULT: top-1 {t1:.4f}  top-5 {t5:.4f} "
               f"(chance 0.0098/0.049)")
+        from .log_score import log_score
+        emb_tag = Path(args.emb_train).stem.replace("_pooled", "")
+        log_score(experiment="infonce", subject=args.sub,
+                  embedding=emb_tag, window=f"{T_WIN}",
+                  n_components=args.n_components, embed_dim=args.embed_dim,
+                  epochs=args.epochs, batch_size=args.batch_size,
+                  temperature=args.temperature, lr=args.lr,
+                  seed=args.seed, holdout=0, top1=t1, top5=t5, note="")
         Path("work").mkdir(exist_ok=True)
         np.save(f"work/ranked_sub{args.sub}_infonce.npy", ranked_e)
     else:
