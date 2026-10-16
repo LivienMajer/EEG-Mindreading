@@ -1,6 +1,6 @@
 """Contrastive training of the EEG encoder against frozen video embeddings.
 
-    python -m src.xsubj.train --config configs/xsubj.yaml                  # all labeled subjects
+    python -m src.xsubj.train --config configs/xsubj.yaml                  # trn splits of all subjects
     python -m src.xsubj.train --config configs/xsubj.yaml --holdout sub-01 # leave one subject out
     python -m src.xsubj.train --config configs/xsubj.yaml --finetune models/xsubj/checkpoints/all/model.pt --subject sub-05
 """
@@ -122,9 +122,10 @@ def fit(cfg, train: Trials, val: Trials | None, bank: VideoBank, subject_list, f
 
 
 def train_split(cfg, data, bank, holdout: str | None, log=print):
-    """Train on every labeled subject except `holdout`; validation = held-out training videos."""
-    train_subj = [d for d in data if d.subject != holdout and d.video_id is not None]
-    subject_list = [d.subject for d in train_subj]
+    """Train on the `trn` split of every subject except `holdout`; validation = held-out training
+    videos. Test splits are never used for training (challenge rule)."""
+    train_subj = [d for d in data if d.split == "trn" and d.subject != holdout and d.video_id is not None]
+    subject_list = sorted({d.subject for d in train_subj})
     trials = Trials(train_subj, bank, subject_list)
     tr, va = split_by_video(trials, cfg["train"]["val_frac"], cfg["seed"])
     log(f"train {len(tr)} trials / {len(np.unique(tr.y))} videos, val {len(va)} trials, "
@@ -182,7 +183,7 @@ def main():
     if args.finetune:
         model, ck = load_checkpoint(args.finetune, bank.dim)
         model.to(get_device())
-        d = next(d for d in data if d.subject == args.subject)
+        d = next(d for d in data if d.subject == args.subject and d.split == "trn")
         trials = Trials([d], bank, [])
         model = finetune_subject(cfg, model, trials, bank, fs)
         subject_list = ck["subject_list"] + [args.subject]
@@ -196,7 +197,8 @@ def main():
     print(f"saved {out}")
 
     if args.holdout:
-        d = next(d for d in data if d.subject == args.holdout)
+        d = next(d for d in data if d.subject == args.holdout and d.video_id is not None
+                 and d.split == ("tst" if any(x.split == "tst" for x in data) else "trn"))
         test = Trials([d], bank, subject_list)
         pred = embed(model, test.X, test.subj, get_device())
         print(json.dumps(retrieval_metrics(pred, test.y, bank.emb, cfg["eval"]["k_candidates"]), indent=2))

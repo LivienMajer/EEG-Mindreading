@@ -16,11 +16,21 @@ def _ranks(sim: np.ndarray, true_col: np.ndarray, k, rng) -> np.ndarray:
     return (np.take_along_axis(sim, distractors, 1) > s_true[:, None]).sum(1)
 
 
-def retrieval_metrics(pred: np.ndarray, y: np.ndarray, bank_emb: np.ndarray, ks, seed: int = 0) -> dict:
+def similarity(pred: np.ndarray, cand_emb: np.ndarray, col_norm: bool = False) -> np.ndarray:
+    """Cosine similarity (recordings x candidates). col_norm z-scores each candidate's column over
+    the recordings, so videos that look similar to every EEG response ("hubs") stop dominating."""
+    sim = pred @ cand_emb.T
+    if col_norm:
+        sim = (sim - sim.mean(0)) / (sim.std(0) + 1e-8)
+    return sim
+
+
+def retrieval_metrics(pred: np.ndarray, y: np.ndarray, bank_emb: np.ndarray, ks, seed: int = 0,
+                      col_norm: bool = False) -> dict:
     """pred: (n, d) unit EEG embeddings; y: (n,) bank indices. Candidates = unique videos in y."""
     pool = np.unique(y)
     col = np.searchsorted(pool, y)
-    sim = pred @ bank_emb[pool].T
+    sim = similarity(pred, bank_emb[pool], col_norm)
     rng = np.random.default_rng(seed)
     out = {"n_trials": int(len(y)), "n_videos": int(len(pool))}
     for k in ks:
@@ -47,10 +57,11 @@ def average_repeats(pred: np.ndarray, y: np.ndarray, subject: np.ndarray):
     return avg, y_avg, subj_avg
 
 
-def permutation_test(pred: np.ndarray, y: np.ndarray, bank_emb: np.ndarray, n_perm: int, seed: int = 0) -> dict:
+def permutation_test(pred: np.ndarray, y: np.ndarray, bank_emb: np.ndarray, n_perm: int, seed: int = 0,
+                     col_norm: bool = False) -> dict:
     """Top-1 among all candidates vs. the null of shuffled trial->video labels."""
     pool = np.unique(y)
-    sim = pred @ bank_emb[pool].T
+    sim = similarity(pred, bank_emb[pool], col_norm)
     best = sim.argmax(1)
     col = np.searchsorted(pool, y)
     obs = float((best == col).mean())

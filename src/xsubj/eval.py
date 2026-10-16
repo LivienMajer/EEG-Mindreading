@@ -1,7 +1,14 @@
-"""Leave-one-subject-out benchmark for the ridge baseline and the contrastive encoder.
+"""Validation for the ridge baseline and the contrastive encoder.
 
-    python -m src.xsubj.eval --config configs/xsubj.yaml                    # both models, all folds
-    python -m src.xsubj.eval --config configs/xsubj.yaml --models ridge     # baseline only
+    python -m src.xsubj.eval                       # official protocol, both models
+    python -m src.xsubj.eval --models ridge        # baseline only (seconds)
+    python -m src.xsubj.eval --mode loso           # also hide the scored subject's training data
+    python -m src.xsubj.eval --models ridge --video-emb models/xsubj/features/lowlevel.npz         models/xsubj/features/clip_vitb32.npz      # compare / combine video feature sets
+
+official: train on the trn split of all six subjects, score the labeled tst splits
+          (sub-01..04) among their 102 candidates; mirrors how sub-05/06 are scored.
+loso:     as official, but the scored subject is left out of training entirely.
+Test splits are only ever scored, never trained on.
 """
 from __future__ import annotations
 
@@ -21,8 +28,10 @@ from src.xsubj.video.embeddings import load_video_bank
 
 
 def evaluate(pred, test: Trials, bank, e: dict, seed: int) -> dict:
-    res = {"trials": retrieval_metrics(pred, test.y, bank.emb, e["k_candidates"], seed),
-           "permutation": permutation_test(pred, test.y, bank.emb, e["n_permutations"], seed)}
+    res = {}
+    for name, cn in (("raw", False), ("colnorm", True)):
+        res[name] = retrieval_metrics(pred, test.y, bank.emb, e["k_candidates"], seed, col_norm=cn)
+        res[name]["permutation"] = permutation_test(pred, test.y, bank.emb, e["n_permutations"], seed, cn)
     if e["average_repeats"]:
         p, y, _ = average_repeats(pred, test.y, test.subject)
         if len(y) < len(test.y):
@@ -30,59 +39,75 @@ def evaluate(pred, test: Trials, bank, e: dict, seed: int) -> dict:
     return res
 
 
+def folds(data, mode: str):
+    """[(holdout subject or None, test SubjectData list)]"""
+    tst = [d for d in data if d.split == "tst" and d.video_id is not None]
+    if not tst:  # synthetic / npz data has no test split: score each subject's trials LOSO
+        return [(d.subject, [d]) for d in data if d.video_id is not None]
+    if mode == "official":
+        return [(None, tst)]
+    return [(d.subject, [d]) for d in tst]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="configs/xsubj.yaml")
+    ap.add_argument("--mode", default="official", choices=["official", "loso"])
     ap.add_argument("--models", nargs="+", default=["ridge", "encoder"], choices=["ridge", "encoder"])
     ap.add_argument("--epochs", type=int, default=None, help="override train.epochs (quick runs)")
+    ap.add_argument("--video-emb", nargs="+", default=None, help="override data.video_emb (several = combined)")
     args = ap.parse_args()
 
     cfg = load_config(args.config)
     if args.epochs:
         cfg["train"]["epochs"] = args.epochs
+    if args.video_emb:
+        cfg["data"]["video_emb"] = args.video_emb[0] if len(args.video_emb) == 1 else args.video_emb
     seed_everything(cfg["seed"])
-    data = [d for d in load_preprocessed(cfg) if d.video_id is not None]
+    data = load_preprocessed(cfg)
     bank = load_video_bank(cfg)
     fs, tmin = data[0].fs, data[0].tmin
     results = {m: {} for m in args.models}
 
-    for held in data:
-        print(f"\n=== holdout {held.subject} ===")
-        others = [d for d in data if d is not held]
+    for holdout, tests in folds(data, args.mode):
+        print(f"\n=== train without: {holdout or '-'} | score: {[t.subject for t in tests]} ===")
+        train_data = [d for d in data if d.split == "trn" and d.subject != holdout and d.video_id is not None]
         if "ridge" in args.models:
-            tr = Trials(others, bank, [])
+            tr = Trials(train_data, bank, [])
             ridge = RidgeDecoder(cfg["ridge"], fs, tmin).fit(tr.X, bank.emb[tr.y])
-            test = Trials([held], bank, [])
-            results["ridge"][held.subject] = evaluate(ridge.predict(test.X), test, bank, cfg["eval"], cfg["seed"])
-            print("ridge  ", _short(results["ridge"][held.subject]))
+            for d in tests:
+                test = Trials([d], bank, [])
+                results["ridge"][d.subject] = evaluate(ridge.predict(test.X), test, bank, cfg["eval"], cfg["seed"])
+                print(f"ridge   {d.subject}", _short(results["ridge"][d.subject]))
         if "encoder" in args.models:
             seed_everything(cfg["seed"])
-            model, subject_list = train_split(cfg, data, bank, held.subject)
-            test = Trials([held], bank, subject_list)
-            pred = embed(model, test.X, test.subj, get_device())
-            results["encoder"][held.subject] = evaluate(pred, test, bank, cfg["eval"], cfg["seed"])
-            print("encoder", _short(results["encoder"][held.subject]))
+            model, subject_list = train_split(cfg, data, bank, holdout)
+            for d in tests:
+                test = Trials([d], bank, subject_list)
+                pred = embed(model, test.X, test.subj, get_device())
+                results["encoder"][d.subject] = evaluate(pred, test, bank, cfg["eval"], cfg["seed"])
+                print(f"encoder {d.subject}", _short(results["encoder"][d.subject]))
 
-    print("\n=== LOSO mean over subjects ===")
-    for m, folds in results.items():
-        keys = [k for k in next(iter(folds.values()))["trials"] if k.startswith(("top", "chance"))]
-        mean = {k: float(np.mean([f["trials"][k] for f in folds.values()])) for k in keys}
-        results[m]["_mean"] = mean
-        print(f"{m:8s}", "  ".join(f"{k}={v:.3f}" for k, v in mean.items()))
+    print(f"\n=== {args.mode}: mean over scored subjects ===")
+    for m, res in results.items():
+        per_subj = dict(res)
+        for name in ("raw", "colnorm"):
+            keys = [k for k in next(iter(per_subj.values()))[name] if k.startswith(("top", "chance"))]
+            mean = {k: float(np.mean([r[name][k] for r in per_subj.values()])) for k in keys}
+            results[m][f"_mean_{name}"] = mean
+            print(f"{m:8s}{name:8s}", "  ".join(f"{k}={v:.3f}" for k, v in mean.items()))
 
-    out = resolve("models/xsubj/results") / f"loso_{time.strftime('%Y%m%d_%H%M%S')}.json"
+    out = resolve("models/xsubj/results") / f"{args.mode}_{time.strftime('%Y%m%d_%H%M%S')}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps({"config": cfg, "results": results}, indent=2))
+    out.write_text(json.dumps({"config": cfg, "mode": args.mode, "results": results}, indent=2))
     print(f"\nsaved {out}")
 
 
 def _short(r: dict) -> str:
-    t, p = r["trials"], r["permutation"]
-    s = "  ".join(f"{k}={v:.3f}" for k, v in t.items() if k.startswith("top1"))
-    s += f"  (perm p={p['p_value']:.4f})"
-    if "repeats_averaged" in r:
-        s += f"  | avg-repeats top1@all={r['repeats_averaged']['top1@all']:.3f}"
-    return s
+    def one(t):
+        return (f"top1={t['top1@all']:.3f} top5={t.get('top5@all', float('nan')):.3f} "
+                f"(n={t['n_videos']}, p={t['permutation']['p_value']:.3f})")
+    return f"raw {one(r['raw'])} | colnorm {one(r['colnorm'])}"
 
 
 if __name__ == "__main__":

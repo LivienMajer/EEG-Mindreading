@@ -1,16 +1,15 @@
 # Cross-subject EEG -> video retrieval (src/xsubj). Everything that touches the raw data
-# format lives in src/xsubj/eeg/adapter.py; switch `data.format` from `synthetic` to
-# `repo` (team loader src/load_data.py) once the data is released.
+# format lives in src/xsubj/eeg/adapter.py. Set data.format to `synthetic` for a smoke test
+# without the challenge data.
 
 seed: 0
 
 data:
-  format: synthetic            # synthetic | repo | npz
-  repo_dirs: [data/train, data/test]   # repo: subject* files, read with src.load_data.load_subject
-  repo_sfreq: 250              # repo: fallback sampling rate if the file has none
-  repo_tmin: 0.0               # repo: time of the first sample relative to video onset (s)
+  format: challenge            # challenge | synthetic | npz
+  challenge_dir: data/eeg-mind-reading-challenge   # unzipped organiser download (trn/, tst/, tst_stim/)
   eeg_dir: data/eeg            # npz: one file per subject, sub-XX.npz with X, video_id, fs (+ ch_names, tmin)
-  video_emb: data/video_embeddings.npz   # from src.video_embeddings.encode_all_candidates (or ids + emb)
+  video_emb: models/xsubj/features/clip_vitb32.npz # ids + emb, a list of files (combined), or {video id: (n_frames, d)}
+  video_standardize: true      # z-score each video feature before L2-normalising
   cache_dir: models/xsubj/cache
   synthetic:                   # only used when format == synthetic (pipeline smoke test)
     n_subjects: 4
@@ -29,21 +28,22 @@ data:
 preprocess:
   l_freq: 0.5
   h_freq: 40.0
-  notch: 50.0                  # null to disable
+  notch: null                  # challenge data is already low-passed (no power above 45 Hz)
   average_reference: true
   baseline: true               # subtract mean of the pre-stimulus window (t < 0) if present
   tmin: 0.0                    # analysis window relative to video onset (s)
-  tmax: 3.0
-  resample: 128
+  tmax: 1.0                    # stimulus information is concentrated in the first second
+  resample: 100
+  remove_mean_response: true   # subtract the split's average response (see eeg/preprocess.py)
   clip_std: 6.0                # clip outliers at +-clip_std per channel (after scaling)
   euclidean_alignment: true    # per-subject whitening; label-free, so valid for test subjects too
 
 model:
   arch: shallow                # shallow | eegnet
   n_filters: 40
-  temporal_kernel: 25
-  pool: 75
-  pool_stride: 15
+  temporal_kernel: 13           # ~130 ms at 100 Hz
+  pool: 25
+  pool_stride: 10
   nonlin: elu                  # elu (keeps ERP phase) | square_log (band power, classic ShallowConvNet)
   dropout: 0.5
   hidden: 512

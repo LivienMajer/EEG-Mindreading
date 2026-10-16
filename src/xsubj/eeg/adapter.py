@@ -1,8 +1,7 @@
 """The only module that knows the raw data format.
 
-Every loader returns a list of `SubjectData`: epoched EEG (trials x channels x samples)
-with the video id each trial showed. Add the official challenge format as a new
-`_load_<format>` function once the data and templates are released.
+Every loader returns a list of `SubjectData`: epoched EEG (trials x channels x samples) of
+one subject and one split, with the video id each trial showed (None where withheld).
 """
 from __future__ import annotations
 
@@ -22,6 +21,11 @@ class SubjectData:
     fs: float
     tmin: float = 0.0                # time of the first sample relative to video onset (s)
     ch_names: list[str] = field(default_factory=list)
+    split: str = "trn"               # trn | tst; normalisation statistics are computed per split
+
+    @property
+    def key(self) -> str:
+        return f"{self.subject}_{self.split}"
 
 
 def load_subjects(cfg: dict, subjects: list[str] | None = None) -> list[SubjectData]:
@@ -30,8 +34,8 @@ def load_subjects(cfg: dict, subjects: list[str] | None = None) -> list[SubjectD
         data = _load_synthetic(cfg["data"]["synthetic"])
     elif fmt == "npz":
         data = _load_npz(resolve(cfg["data"]["eeg_dir"]))
-    elif fmt == "repo":
-        data = _load_repo(cfg["data"])
+    elif fmt == "challenge":
+        data = _load_challenge(resolve(cfg["data"]["challenge_dir"]))
     else:
         raise ValueError(f"unknown data.format {fmt!r}; add a loader in src/xsubj/eeg/adapter.py")
     if subjects is not None:
@@ -59,17 +63,25 @@ def _load_npz(eeg_dir: Path) -> list[SubjectData]:
     return out
 
 
-def _load_repo(dcfg: dict) -> list[SubjectData]:
-    """Reuse the team loader `src.load_data.load_subject` (subject*.npz / .npy / .fif per subject)."""
-    from src.load_data import load_subject
-
+def _load_challenge(root: Path) -> list[SubjectData]:
+    """Official layout: trn/sub-XX_trn.npz ({video id: 17 x 1500}), tst/sub-XX_tst.npy
+    (102 x 17 x 1500, shuffled), tst_stim/sub-XX_tst_stim.npy (withheld for sub-05/06).
+    500 Hz, epochs start at video onset. Test trials keep their original order."""
     out = []
-    for split in dcfg["repo_dirs"]:
-        for f in sorted(p for p in resolve(split).rglob("subject*") if p.suffix in {".npy", ".npz", ".fif"}):
-            ds = load_subject(f, sfreq=dcfg["repo_sfreq"])
-            labeled = ds.y.size and not (ds.y == 0).all()   # load_subject fills zeros when unlabeled
-            out.append(SubjectData(f.stem, ds.X, ds.y.astype(str) if labeled else None,
-                                   float(ds.sfreq), dcfg.get("repo_tmin", 0.0), list(ds.ch_names)))
+    for f in sorted((root / "trn").glob("sub-*_trn.npz")):
+        subject = f.stem.removesuffix("_trn")
+        z = np.load(f, allow_pickle=False)
+        ids = sorted(z.files, key=int)
+        out.append(SubjectData(subject, np.stack([z[k] for k in ids]).astype(np.float32),
+                               np.array(ids), 500.0, 0.0, split="trn"))
+        tst = root / "tst" / f"{subject}_tst.npy"
+        if tst.exists():
+            stim = root / "tst_stim" / f"{subject}_tst_stim.npy"
+            y = np.load(stim, allow_pickle=False).astype(str) if stim.exists() else None
+            out.append(SubjectData(subject, np.load(tst, allow_pickle=False).astype(np.float32),
+                                   y, 500.0, 0.0, split="tst"))
+    if not out:
+        raise FileNotFoundError(f"no trn/sub-*_trn.npz under {root}")
     return out
 
 
