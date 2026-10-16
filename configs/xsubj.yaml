@@ -1,0 +1,78 @@
+# Cross-subject EEG -> video retrieval (src/xsubj). Everything that touches the raw data
+# format lives in src/xsubj/eeg/adapter.py; switch `data.format` from `synthetic` to
+# `repo` (team loader src/load_data.py) once the data is released.
+
+seed: 0
+
+data:
+  format: synthetic            # synthetic | repo | npz
+  repo_dirs: [data/train, data/test]   # repo: subject* files, read with src.load_data.load_subject
+  repo_sfreq: 250              # repo: fallback sampling rate if the file has none
+  repo_tmin: 0.0               # repo: time of the first sample relative to video onset (s)
+  eeg_dir: data/eeg            # npz: one file per subject, sub-XX.npz with X, video_id, fs (+ ch_names, tmin)
+  video_emb: data/video_embeddings.npz   # from src.video_embeddings.encode_all_candidates (or ids + emb)
+  cache_dir: models/xsubj/cache
+  synthetic:                   # only used when format == synthetic (pipeline smoke test)
+    n_subjects: 4
+    n_videos: 200
+    reps: 2                    # presentations per video per subject
+    n_channels: 32
+    fs: 250
+    tmin: -0.2                 # epoch start relative to video onset (s)
+    tmax: 3.0
+    emb_dim: 512
+    n_sources: 8
+    snr: 0.1                   # 0.0 -> pure noise, decoding must stay at chance
+    subject_variability: 0.5   # per-subject deviation from the shared channel mixing
+    seed: 0
+
+preprocess:
+  l_freq: 0.5
+  h_freq: 40.0
+  notch: 50.0                  # null to disable
+  average_reference: true
+  baseline: true               # subtract mean of the pre-stimulus window (t < 0) if present
+  tmin: 0.0                    # analysis window relative to video onset (s)
+  tmax: 3.0
+  resample: 128
+  clip_std: 6.0                # clip outliers at +-clip_std per channel (after scaling)
+  euclidean_alignment: true    # per-subject whitening; label-free, so valid for test subjects too
+
+model:
+  arch: shallow                # shallow | eegnet
+  n_filters: 40
+  temporal_kernel: 25
+  pool: 75
+  pool_stride: 15
+  nonlin: elu                  # elu (keeps ERP phase) | square_log (band power, classic ShallowConvNet)
+  dropout: 0.5
+  hidden: 512
+  subject_layer: true          # per-subject channel mixing, identity-initialised
+
+train:
+  epochs: 150
+  batch_size: 64
+  lr: 1.0e-3
+  weight_decay: 1.0e-2
+  temperature: 0.07            # initial; learnable
+  negatives: all               # all: softmax over all training videos | batch: in-batch (unique videos)
+  mse_weight: 0.5              # weight of (1 - cosine) regression term toward the target embedding
+  val_frac: 0.1                # fraction of training *videos* held out for early stopping
+  patience: 25
+  amp: true                    # mixed precision (CUDA only)
+  aug:
+    time_shift: 0.05           # max shift in seconds
+    channel_dropout: 0.1
+    noise_std: 0.1
+    scale: 0.1                 # amplitude scaling in [1-scale, 1+scale]
+
+ridge:
+  erp_bin: 0.05                # seconds per ERP bin
+  erp_tmax: 1.0                # ERP features from tmin..erp_tmax
+  bands: {delta: [1, 4], theta: [4, 8], alpha: [8, 13], beta: [13, 30], gamma: [30, 40]}
+  alphas: [0.1, 1, 10, 100, 1000, 10000, 100000]
+
+eval:
+  k_candidates: [2, 10, 50, all]
+  average_repeats: true        # also report accuracy after averaging repeats of the same video
+  n_permutations: 1000
