@@ -118,7 +118,7 @@ def train_infonce(Xe, V, trn_ids, V_ids, embed_dim=256, batch_size=256,
         for xb, vb in dl:
             xb, vb = xb.to(device), vb.to(device)
             ze = model(xb)
-            ze = ze / (ze.norm(dim=-1, keepdims=True) + 1e-8)
+            ze = ze / (ze.norm(dim=-1, keepdim=True) + 1e-8)
 
             # shuffled video batch as negatives (video set >> batch size)
             # vb rows correspond 1:1 to xb rows (same trial order!)
@@ -161,7 +161,7 @@ def rank_candidates(model, E_tst_win, X_cand, device="cpu", batch_size=512,
             xb = torch.from_numpy(
                 E_tst_win[i:i + batch_size].astype(np.float32)).to(device)
             z = model(xb)
-            Z.append((z / (z.norm(dim=-1, keepdims=True) + 1e-8)).cpu().numpy())
+            Z.append((z / (z.norm(dim=-1, keepdim=True) + 1e-8)).cpu().numpy())
         Z = np.concatenate(Z)
     Zc = X_cand / (np.linalg.norm(X_cand, axis=1, keepdims=True) + 1e-8)
     S = Z @ Zc.T                                   # (n, n_cand) cosine sim
