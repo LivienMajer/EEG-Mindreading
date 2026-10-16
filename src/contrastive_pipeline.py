@@ -83,7 +83,8 @@ def sorted_train_ids(emb):
 
 def train_infonce(Xe, V, trn_ids, V_ids, embed_dim=256, batch_size=256,
                   epochs=200, lr=3e-4, temperature=0.1, seed=0,
-                  log_every=20, device="cpu", subject_token=True):
+                  log_every=20, device="cpu", subject_token=True,
+                  net_seed=None):
     """Train EEGNet to align EEG trials with (PCAReduced) video embeddings.
 
     Xe:   (n_trials, 17, t_win) EEG train input
@@ -95,8 +96,8 @@ def train_infonce(Xe, V, trn_ids, V_ids, embed_dim=256, batch_size=256,
     from torch.utils.data import DataLoader, TensorDataset
     from .eeg_encoder import build_eegnet
 
-    torch.manual_seed(seed)
-    rng = np.random.default_rng(seed)
+    torch.manual_seed(net_seed if net_seed is not None else seed)
+    rng = np.random.default_rng(net_seed if net_seed is not None else seed)
 
     n_trials = len(Xe)
     d_emb = V.shape[1]
@@ -186,6 +187,10 @@ def main():
     p.add_argument("--temperature", type=float, default=0.1)
     p.add_argument("--lr", type=float, default=3e-4)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--net-seed", type=int, default=-1,
+                   help="network init/shuffle seed; -1 = use --seed (legacy). "
+                        "Split the object of study: --seed controls the "
+                        "holdout split AND net unless overridden here.")
     p.add_argument("--holdout", type=int, default=0,
                    help="if >0: hold out N train videos as PSEUDO candidates "
                         "and evaluate ranking them (validation WITHOUT "
@@ -234,8 +239,10 @@ def main():
 
     print(f"sub-{args.sub}: {len(E_fit)} trials, target dim {V.shape[1]}, "
           f"window {T_WIN} @{100} Hz")
+    net_seed = args.net_seed if args.net_seed >= 0 else args.seed
     model = train_infonce(E_fit, V, v_fit, V_ids,
                           embed_dim=args.embed_dim,
+                          net_seed=net_seed,
                           batch_size=args.batch_size,
                           epochs=args.epochs, lr=args.lr,
                           temperature=args.temperature, seed=args.seed)
@@ -251,6 +258,11 @@ def main():
         r = ranked
         t1 = float((r[:, 0] == y).mean())
         t5 = float((r[:, :5] == y[:, None]).any(1).mean())
+        # dump per-trial rankings for cross-run overlap analysis
+        Path("work/holdout").mkdir(parents=True, exist_ok=True)
+        emb_tag = Path(args.emb_train).stem.replace("_pooled", "")
+        np.save(f"work/holdout/ranked_sub{args.sub}_{emb_tag}_s{args.seed}.npy", r)
+        np.save(f"work/holdout/y_sub{args.sub}_s{args.seed}.npy", y)
         print(f"\nsub-{args.sub} HOLDOUT RESULT: top-1 {t1:.4f}  "
               f"top-5 {t5:.4f}  (chance {1/len(hold_ids):.4f}/"
               f"{min(5, len(hold_ids))/len(hold_ids):.4f}, "
