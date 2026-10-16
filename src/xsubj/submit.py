@@ -5,13 +5,14 @@ in its original order, holding the 102 candidate video IDs (1001..1102) from mos
 likely. Subjects with tst_stim labels (sub-01..04) are scored with the organisers' formula,
 which checks the format end to end.
 
-Default model: ensemble = mean of the ridge and the encoder predictions in CLIP space
-(dev: top-1 11.0%, top-5 33.1%, mean rank 17.7 vs ridge alone 9.8% / 33.1% / 18.9).
+Default model: ensemble = mean of the ridge and the encoder predictions in CLIP space, ranked
+after per-candidate normalisation (dev: top-1 10.5%, top-5 35.3%, mean rank 16.8; without
+normalisation 11.0% / 33.1% / 17.7; ridge alone 9.8% / 33.1% / 18.9).
 
     python -m src.xsubj.train                              # encoder -> models/xsubj/checkpoints/all/model.pt
     python -m src.xsubj.submit                             # ensemble, sub-01..06
     python -m src.xsubj.submit --model ridge               # ridge only (fits on all trn splits)
-    python -m src.xsubj.submit ... --subjects sub-01 sub-05 sub-06 --col-norm
+    python -m src.xsubj.submit ... --subjects sub-01 sub-05 sub-06 --no-col-norm
 """
 from __future__ import annotations
 
@@ -53,7 +54,10 @@ def main():
     ap.add_argument("--checkpoint", default="models/xsubj/checkpoints/all/model.pt",
                     help="encoder checkpoint (from src.xsubj.train)")
     ap.add_argument("--subjects", nargs="+", default=[f"sub-0{i}" for i in range(1, 7)])
-    ap.add_argument("--col-norm", action="store_true", help="z-score each candidate's similarities")
+    ap.add_argument("--col-norm", action=argparse.BooleanOptionalAction, default=True,
+                    help="z-score each candidate's similarities over the subject's test recordings "
+                         "(paired test on sub-01..04: top-1 21 vs 23 recordings, top-5 35 vs 26, "
+                         "mean rank 17.7 -> 16.8; default on)")
     ap.add_argument("--out", default="submissions")
     args = ap.parse_args()
 
