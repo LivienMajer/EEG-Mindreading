@@ -261,7 +261,7 @@ def main():
         # dump per-trial rankings for cross-run overlap analysis
         Path("work/holdout").mkdir(parents=True, exist_ok=True)
         emb_tag = Path(args.emb_train).stem.replace("_pooled", "")
-        np.save(f"work/holdout/ranked_sub{args.sub}_{emb_tag}_s{args.seed}.npy", r)
+        np.save(f"work/holdout/ranked_sub{args.sub}_{emb_tag}_s{args.seed}_n{net_seed}.npy", r)
         np.save(f"work/holdout/y_sub{args.sub}_s{args.seed}.npy", y)
         print(f"\nsub-{args.sub} HOLDOUT RESULT: top-1 {t1:.4f}  "
               f"top-5 {t5:.4f}  (chance {1/len(hold_ids):.4f}/"
