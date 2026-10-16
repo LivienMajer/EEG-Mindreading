@@ -51,15 +51,35 @@ space", then let the benchmark decide:
 | 2 | `dinov2-b14` | self-supervised features, often best for early visual areas |
 | 3 | `siglip2-b16` | newer, stronger contrastive image model |
 | 4 | `alexnet-f3/6/8/10` | organizer baseline layers + depth comparison for analysis |
-| 5 | video/audio models (InternVideo2, V-JEPA 2, CLAP) | temporal + audio branch, orthogonal signal |
+| 5 | `clap`, `clip-clap` | audio-only baseline and equal-weight multimodal fusion |
+
+CLIP and CLAP are extracted as separate embedding files. Their latent spaces
+are not directly comparable, so benchmark them independently before choosing
+an EEG-side fusion strategy. CLAP uses each video's complete 3-second audio
+track to create one normalized embedding per video. CLAP repeat-pads the short
+audio internally to its expected 10-second input length. The first run
+downloads the pretrained CLAP checkpoint. PyAV replaces invalid UTF-8 in MP4
+metadata while reading so malformed tags do not interrupt audio extraction;
+audio decode errors are still surfaced.
+
+To create a fused representation, select `clip-clap`. It first averages the
+sampled CLIP frame vectors into one visual vector per video, then L2-normalizes
+that vector and the video's CLAP vector independently. The vectors are scaled
+by `1/sqrt(2)` and concatenated, giving each modality equal contribution to
+cosine similarity. The default ViT-B/32 + CLAP models produce one
+1024-dimensional fused vector per video. If a video has no audio stream, the
+extractor reports its ID and saves a normalized CLIP vector with a zero-filled
+audio block, so visual matching can still include that candidate. In a
+CLAP-only archive, the missing-audio entry is a zero vector and its ID is
+reported; interpret CLAP-only scores with that limitation in mind.
 
 **GPU teammate workflow:**
 
 ```bash
 # 1) extract embeddings for train + test stimuli (one command, GPU)
-python -m src.extract_embeddings --models clip-vitb32 clip-vitl14 dinov2-b14 \
+python -m src.extract_embeddings --models clip-vitb32 clip-vitl14 dinov2-b14 clap clip-clap \
     --stimuli-dir <root>/stimuli_train --out work/emb_train.npz --device cuda
-python -m src.extract_embeddings --models clip-vitb32 clip-vitl14 dinov2-b14 \
+python -m src.extract_embeddings --models clip-vitb32 clip-vitl14 dinov2-b14 clap clip-clap \
     --stimuli-dir <root>/stimuli_test --out work/emb_test.npz --device cuda
 
 # 2) benchmark each model on dev subjects (any machine)
@@ -67,6 +87,27 @@ python -m src.bench_embeddings --data-dir <root> \
     --emb-train work/emb_train__clip-vitb32.npz \
     --emb-test  work/emb_test__clip-vitb32.npz \
     --window snr   # 50-350 ms; use --window org for 50-600 ms comparison
+
+# Run the same benchmark with the audio-only CLAP embeddings:
+python -m src.bench_embeddings --data-dir <root> \
+    --emb-train work/emb_train__clap.npz \
+    --emb-test  work/emb_test__clap.npz \
+    --window snr
+
+# Benchmark the equal-weight audio+visual fused embeddings:
+python -m src.bench_embeddings --data-dir <root> \
+    --emb-train work/emb_train__clip-clap.npz \
+    --emb-test  work/emb_test__clip-clap.npz \
+    --window snr
+```
+
+For contrastive EEG-to-video alignment, pass the fused training archive to
+`src.train_contrastive`; it reads the per-video fused vectors and infers the
+EEG encoder's output size:
+
+```bash
+python -m src.train_contrastive --data <train-data> \
+    --video-embeddings work/emb_train__clip-clap.npz
 ```
 
 Log every result in the findings table below — the model ranking is the

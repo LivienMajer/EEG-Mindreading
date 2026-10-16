@@ -16,6 +16,8 @@ Usage (GPU machine):
 Models (all public, pre-hackathon release):
   clip-vitb32   OpenCLIP ViT-B-32 laion/openai     (512-d)
   clip-vitl14   OpenCLIP ViT-L-14 openai           (768-d)
+  clap          LAION CLAP audio embeddings         (512-d)
+  clip-clap     equal-weight CLIP + CLAP concatenation
   siglip2-b16   SigLIP 2 base                      (768-d)  [pip install siglip2 or timm]
   dinov2-b14    DINOv2 ViT-B/14 self-supervised    (768-d)  [torch.hub fairstudio]
   jepa2         V-JEPA 2 world-model embeddings   (Meta, video-native)
@@ -35,7 +37,8 @@ import torch  # noqa: E402
 from PIL import Image  # noqa: E402
 
 MODEL_KEYS = ["clip-vitb32", "clip-vitl14", "siglip2-b16", "dinov2-b14",
-              "jepa2", "alexnet-f3", "alexnet-f6", "alexnet-f8", "alexnet-f10"]
+              "jepa2", "alexnet-f3", "alexnet-f6", "alexnet-f8", "alexnet-f10",
+              "clap", "clip-clap"]
 
 
 # ---------------------------------------------------------------------------
@@ -154,32 +157,83 @@ def run(model_keys, stimuli_dir, out_file, n_frames, device, limit=None):
         raise FileNotFoundError(f"no .mp4 under {stimuli_dir}")
     print(f"{len(videos)} videos in {stimuli_dir}")
 
-    # pre-extract all frames once (fast), reuse across models
-    t0 = time.time()
-    all_frames, ids = [], []
-    for v in videos:
-        all_frames.append(extract_frames(v, n_frames))
-        ids.append(int(v.stem))
-    print(f"frames extracted in {time.time() - t0:.0f}s "
-          f"({len(videos)} x {n_frames} frames)")
+    ids = [int(video.stem) for video in videos]
+    all_frames = None
+    if any(key != "clap" for key in model_keys):
+        t0 = time.time()
+        all_frames = [extract_frames(video, n_frames) for video in videos]
+        print(f"frames extracted in {time.time() - t0:.0f}s "
+              f"({len(videos)} x {n_frames} frames)")
 
     for key in model_keys:
-        encode = load_model(key, device)
-        t0 = time.time()
         out_path = Path(out_file).with_name(
             Path(out_file).stem + f"__{key}.npz")
-        out_path.parent.mkdir(parents=True, exist_ok=True)
         if out_path.exists():
             print(f"[{key}] exists -> {out_path} (skip; delete to recompute)")
             continue
+
+        t0 = time.time()
         emb = {}
-        for vid, frames in zip(ids, all_frames):
-            e = encode(frames)  # (n_frames, D)
-            for k in range(e.shape[0]):
-                emb[f"{vid:05d}_f{k:02d}"] = e[k].astype(np.float32)
+        if key == "clap":
+            from .video_embeddings import (
+                NoAudioStreamError, _get_clap, encode_audio)
+            model = _get_clap(device)
+            audio_dim = None
+            missing_audio = []
+            audio_embeddings = {}
+            for vid, video in zip(ids, videos):
+                try:
+                    e = encode_audio(video, model, device=device)
+                except NoAudioStreamError:
+                    missing_audio.append(video.stem)
+                    continue
+                audio_dim = e.shape[1]
+                audio_embeddings[vid] = e[0].astype(np.float32)
+            if audio_dim is None:
+                raise ValueError(
+                    f"No videos with audio streams found under {stimuli_dir}")
+            for vid in ids:
+                vector = audio_embeddings.get(
+                    vid, np.zeros(audio_dim, dtype=np.float32))
+                emb[f"{vid:05d}_f00"] = vector
+            if missing_audio:
+                print(
+                    f"[{key}] WARNING: {len(missing_audio)} videos have no "
+                    f"audio; saved zero audio vectors for IDs: "
+                    f"{', '.join(map(str, missing_audio))}")
+        elif key == "clip-clap":
+            from .video_embeddings import (
+                NoAudioStreamError, _get_clap, encode_audio,
+                fuse_embeddings)
+            encode_clip = load_model("clip-vitb32", device)
+            clap_model = _get_clap(device)
+            missing_audio = []
+            for vid, video, frames in zip(ids, videos, all_frames):
+                clip_emb = encode_clip(frames).mean(axis=0, keepdims=True)
+                try:
+                    clap_emb = encode_audio(video, clap_model, device=device)
+                except NoAudioStreamError:
+                    clap_emb = None
+                    missing_audio.append(video.stem)
+                fused = fuse_embeddings(clip_emb, clap_emb)
+                emb[f"{vid:05d}_f00"] = fused[0].astype(np.float32)
+            if missing_audio:
+                print(
+                    f"[{key}] WARNING: {len(missing_audio)} videos have no "
+                    f"audio; saved CLIP-only fused vectors for IDs: "
+                    f"{', '.join(map(str, missing_audio))}")
+        else:
+            encode = load_model(key, device)
+            for vid, frames in zip(ids, all_frames):
+                e = encode(frames)  # (n_frames, D)
+                for k in range(e.shape[0]):
+                    emb[f"{vid:05d}_f{k:02d}"] = e[k].astype(np.float32)
+
+        out_path.parent.mkdir(parents=True, exist_ok=True)
         np.savez_compressed(out_path, **emb)
-        print(f"[{key}] {len(emb)} frame-embeddings -> {out_path} "
-              f"in {time.time() - t0:.0f}s (dim {e.shape[1]})")
+        print(f"[{key}] {len(emb)} embeddings -> {out_path} "
+              f"in {time.time() - t0:.0f}s "
+              f"(dim {next(iter(emb.values())).shape[0]})")
 
 
 def main():
