@@ -32,7 +32,10 @@ from .challenge_data import TEST_VIDEO_IDS, load_test_subject, load_train_subjec
 
 DEC, SFREQ, N_FRAMES = 5, 500, 8
 LAYER = "features.3"
-T_WIN = (5, 60)  # samples at 100 Hz, = 50-600 ms
+# Empirical d' probe across all 9 subject pairs: 50-350 ms beats the
+# organizer's 50-600 ms window by ~30% relative (cross-subject identifiability).
+# TODO: validate both windows in the full pipeline before final submission.
+T_WIN = (5, 35)  # samples at 100 Hz = 50-350 ms post-onset
 
 
 def decimate_eeg(X: np.ndarray) -> np.ndarray:

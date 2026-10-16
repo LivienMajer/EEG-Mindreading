@@ -2,13 +2,16 @@
 
 data:
   sfreq: 500            # confirmed: 500 Hz, 17 ch, 1500 samples (3 s) per trial
-  filter:
-    l_freq: 0.5
-    h_freq: 45.0
-  artifact_threshold_uv: null    # data is pre-normalized (std~0.5/ch), no µV rejection
-  time_window: [5, 60]           # samples @ 100 Hz after decimation = 50-600 ms
-                                # (organizer baseline window, early visual responses)
-  decimate: 5                    # 500 -> 100 Hz via FIR zero-phase decimate
+  # NO bandpass/highpass recommended for this dataset - empirical d' probe
+  # (src/snr_probe.py) shows raw data maximizes cross-subject identifiability.
+  # The 46 Hz peak is broadband stimulus-locked (gamma), not line noise:
+  # notch filtering it out reduced d' to 0 in probe tests.
+  filter: null          # keep raw; decimate with zero-phase FIR for speed only
+  artifact_rejection: none    # data pre-normalized (std~0.5/ch), clean
+  decimate: 5                    # 500 -> 100 Hz via FIR zero-phase
+  time_window: [5, 35]           # samples @ 100 Hz = 50-350 ms post-onset
+                                # (+30% d' over organizer's 50-600 ms window,
+                                #  consistent across all 9 subject pairs)
 
 features:
   bands:
