@@ -118,4 +118,5 @@ Adapt `src/load_data.py` once organizers' template scripts arrive.
 | 2026-10-17 | PSD: strong 30–50 Hz power = stimulus-locked gamma, NOT line noise. Bandpass/notch/avg-ref/Laplacian all REDUCE cross-subject video identifiability (d'). Raw wins. |
 | 2026-10-17 | Window tuning: 50–350 ms optimal (d'=0.129 vs 0.104 for organizer's 50–600 ms), consistent across all 9 subject pairs (3 repeats, incl. 04/05/06). |
 | 2026-10-17 | **InfoNCE holdout (Exp #1/#2)**: alexnet-f3, sub-01, 102 held-out train videos: **top-1 6.9% / top-5 23.5%** (7×/4.8× chance). Batch top-1 44% in-sample ≠ overfit: generalization confirmed. EEGNet k1=16/k2=8, 256-d target PCA space, τ=0.1, 200 ep. |
+| 2026-10-18 | **Ridge reference on tst (alexnet-f3, snr window)**: sub-01 2.9%/9.8%, sub-02 4.9%/10.8%, sub-03 1.0%/9.8%, sub-04 1.0%/6.9% → **mean 2.45%/9.31%**. InfoNCE beats Ridge on sub-01 by 2.3× top-1 / 2.4× top-5 (6.9%/23.5% vs 2.9%/9.8%). Contrastive path validated against reference architecture. |
 |---|---|

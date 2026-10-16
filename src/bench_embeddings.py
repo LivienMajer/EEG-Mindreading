@@ -223,6 +223,14 @@ def main():
     t1s = [v[0] for v in results.values()]
     t5s = [v[1] for v in results.values()]
     print(f"  MEAN : top-1 {np.mean(t1s):.4f}  top-5 {np.mean(t5s):.4f}")
+    from .log_score import log_score
+    emb_tag = Path(args.emb_train).stem.replace("_pooled", "")
+    for sub, (t1, t5) in results.items():
+        log_score(experiment="ridge-tst", subject=sub, embedding=emb_tag,
+                  window=args.window, top1=t1, top5=t5, note="")
+    log_score(experiment="ridge-tst", subject="MEAN", embedding=emb_tag,
+              window=args.window, top1=float(np.mean(t1s)),
+              top5=float(np.mean(t5s)), note="")
     return results
 
 
