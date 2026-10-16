@@ -74,13 +74,14 @@ def fit(cfg, train: Trials, val: Trials | None, bank: VideoBank, subject_list, f
     """Train a new encoder (or, with `params`, only those parameters of `cfg['_model']`)."""
     t, device = cfg["train"], get_device()
     _, n_ch, n_t = train.X.shape
-    model = cfg.get("_model") or EEGEncoder(n_ch, n_t, bank.dim, len(subject_list), cfg["model"], t["temperature"])
+    model = cfg.get("_model") or EEGEncoder(n_ch, n_t, bank.dim, len(subject_list), cfg["model"], t["temperature"],
+                                            fs=fs, tmin=cfg["preprocess"]["tmin"])
     model.to(device)
     E = torch.from_numpy(bank.emb).to(device)
     train_pool = torch.from_numpy(np.unique(train.y)).to(device)
     opt = torch.optim.AdamW(params or model.parameters(), lr=t["lr"], weight_decay=t["weight_decay"])
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, t["epochs"])
-    loader = DataLoader(TrialDataset(train, t["aug"], fs), batch_size=t["batch_size"], shuffle=True,
+    loader = DataLoader(TrialDataset(train, t["aug"], fs, t.get("xsubj_avg")), batch_size=t["batch_size"], shuffle=True,
                         drop_last=len(train) > t["batch_size"])
     use_amp = t["amp"] and device.type == "cuda"
     scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
@@ -160,7 +161,8 @@ def load_checkpoint(path, bank_dim: int):
     ck = torch.load(path, map_location="cpu", weights_only=False)
     cfg = ck["cfg"]
     n_subj = ck["state_dict"]["subject_layer.W"].shape[0] if cfg["model"]["subject_layer"] else 0
-    model = EEGEncoder(ck["n_channels"], ck["n_times"], bank_dim, n_subj, cfg["model"])
+    model = EEGEncoder(ck["n_channels"], ck["n_times"], bank_dim, n_subj, cfg["model"],
+                       fs=ck["fs"], tmin=cfg["preprocess"]["tmin"])
     model.load_state_dict(ck["state_dict"])
     return model, ck
 

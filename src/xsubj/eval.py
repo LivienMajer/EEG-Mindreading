@@ -3,6 +3,7 @@
     python -m src.xsubj.eval                       # official protocol, both models
     python -m src.xsubj.eval --models ridge        # baseline only (seconds)
     python -m src.xsubj.eval --mode loso           # also hide the scored subject's training data
+    python -m src.xsubj.eval --models encoder --set model.arch=mlp train.xsubj_avg.prob=0
     python -m src.xsubj.eval --models ridge --video-emb models/xsubj/features/lowlevel.npz         models/xsubj/features/clip_vitb32.npz      # compare / combine video feature sets
 
 official: train on the trn split of all six subjects, score the labeled tst splits
@@ -17,6 +18,7 @@ import json
 import time
 
 import numpy as np
+import yaml
 
 from src.xsubj.eeg.dataset import Trials
 from src.xsubj.eeg.preprocess import load_preprocessed
@@ -56,9 +58,18 @@ def main():
     ap.add_argument("--models", nargs="+", default=["ridge", "encoder"], choices=["ridge", "encoder"])
     ap.add_argument("--epochs", type=int, default=None, help="override train.epochs (quick runs)")
     ap.add_argument("--video-emb", nargs="+", default=None, help="override data.video_emb (several = combined)")
+    ap.add_argument("--set", nargs="+", default=[], metavar="KEY=VALUE",
+                    help="override config values, e.g. model.arch=mlp train.xsubj_avg.prob=0")
     args = ap.parse_args()
 
     cfg = load_config(args.config)
+    for kv in args.set:
+        key, value = kv.split("=", 1)
+        *path, last = key.split(".")
+        node = cfg
+        for k in path:
+            node = node[k]
+        node[last] = yaml.safe_load(value)
     if args.epochs:
         cfg["train"]["epochs"] = args.epochs
     if args.video_emb:
@@ -68,6 +79,9 @@ def main():
     bank = load_video_bank(cfg)
     fs, tmin = data[0].fs, data[0].tmin
     results = {m: {} for m in args.models}
+    if len(args.models) == 2:
+        results["ensemble"] = {}
+    preds = {}
 
     for holdout, tests in folds(data, args.mode):
         print(f"\n=== train without: {holdout or '-'} | score: {[t.subject for t in tests]} ===")
@@ -77,7 +91,8 @@ def main():
             ridge = RidgeDecoder(cfg["ridge"], fs, tmin).fit(tr.X, bank.emb[tr.y])
             for d in tests:
                 test = Trials([d], bank, [])
-                results["ridge"][d.subject] = evaluate(ridge.predict(test.X), test, bank, cfg["eval"], cfg["seed"])
+                preds[("ridge", d.subject)] = ridge.predict(test.X)
+                results["ridge"][d.subject] = evaluate(preds[("ridge", d.subject)], test, bank, cfg["eval"], cfg["seed"])
                 print(f"ridge   {d.subject}", _short(results["ridge"][d.subject]))
         if "encoder" in args.models:
             seed_everything(cfg["seed"])
@@ -87,6 +102,11 @@ def main():
                 pred = embed(model, test.X, test.subj, get_device())
                 results["encoder"][d.subject] = evaluate(pred, test, bank, cfg["eval"], cfg["seed"])
                 print(f"encoder {d.subject}", _short(results["encoder"][d.subject]))
+                if "ensemble" in results:  # average of both predicted CLIP vectors
+                    ens = preds[("ridge", d.subject)] + pred
+                    ens /= np.linalg.norm(ens, axis=1, keepdims=True)
+                    results["ensemble"][d.subject] = evaluate(ens, test, bank, cfg["eval"], cfg["seed"])
+                    print(f"ensemble {d.subject}", _short(results["ensemble"][d.subject]))
 
     print(f"\n=== {args.mode}: mean over scored subjects ===")
     for m, res in results.items():
@@ -95,7 +115,7 @@ def main():
             keys = [k for k in next(iter(per_subj.values()))[name] if k.startswith(("top", "chance", "mean_rank"))]
             mean = {k: float(np.mean([r[name][k] for r in per_subj.values()])) for k in keys}
             results[m][f"_mean_{name}"] = mean
-            print(f"{m:8s}{name:8s}", "  ".join(f"{k}={v:.3f}" for k, v in mean.items()))
+            print(f"{m:9s}{name:8s}", "  ".join(f"{k}={v:.3f}" for k, v in mean.items()))
 
     out = resolve("models/xsubj/results") / f"{args.mode}_{time.strftime('%Y%m%d_%H%M%S')}.json"
     out.parent.mkdir(parents=True, exist_ok=True)

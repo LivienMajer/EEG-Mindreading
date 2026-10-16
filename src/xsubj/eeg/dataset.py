@@ -31,14 +31,35 @@ class Trials:
 
 
 class TrialDataset(Dataset):
-    def __init__(self, trials: Trials, aug: dict | None = None, fs: float = 128.0):
-        self.t, self.aug, self.fs = trials, aug, fs
+    """Training trials with optional augmentation.
+
+    xsubj_avg {prob, k}: with probability `prob`, a trial is replaced by the average of itself and
+    k-1 random trials of the *same video* from other subjects (each subject saw a video once),
+    rescaled to the original trial's std. Averaging keeps the stimulus-locked response that subjects
+    share and cancels the rest, which mimics the cleaner (averaged) test recordings.
+    """
+
+    def __init__(self, trials: Trials, aug: dict | None = None, fs: float = 128.0, xsubj_avg: dict | None = None):
+        self.t, self.aug, self.fs, self.avg = trials, aug, fs, xsubj_avg
+        if self.avg:
+            order = np.argsort(trials.y, kind="stable")
+            vids, starts = np.unique(trials.y[order], return_index=True)
+            groups = np.split(order, starts[1:])
+            self.same_video = {int(v): g for v, g in zip(vids, groups)}
 
     def __len__(self):
         return len(self.t)
 
     def __getitem__(self, i):
         x = torch.from_numpy(self.t.X[i])
+        if self.avg and np.random.rand() < self.avg["prob"]:
+            others = self.same_video[int(self.t.y[i])]
+            others = others[others != i]
+            k = min(int(np.random.choice(self.avg["k"])) - 1, len(others))
+            if k > 0:
+                pick = np.random.choice(others, k, replace=False)
+                avg = (x + torch.from_numpy(self.t.X[pick]).sum(0)) / (k + 1)
+                x = avg * (x.std() / (avg.std() + 1e-8))
         if self.aug:
             x = augment(x, self.aug, self.fs)
         return x, int(self.t.y[i]), int(self.t.subj[i])

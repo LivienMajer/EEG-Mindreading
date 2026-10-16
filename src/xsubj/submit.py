@@ -5,8 +5,12 @@ in its original order, holding the 102 candidate video IDs (1001..1102) from mos
 likely. Subjects with tst_stim labels (sub-01..04) are scored with the organisers' formula,
 which checks the format end to end.
 
-    python -m src.xsubj.submit --model encoder --checkpoint models/xsubj/checkpoints/all/model.pt
-    python -m src.xsubj.submit --model ridge              # fits ridge on all trn splits first
+Default model: ensemble = mean of the ridge and the encoder predictions in CLIP space
+(dev: top-1 11.0%, top-5 33.1%, mean rank 17.7 vs ridge alone 9.8% / 33.1% / 18.9).
+
+    python -m src.xsubj.train                              # encoder -> models/xsubj/checkpoints/all/model.pt
+    python -m src.xsubj.submit                             # ensemble, sub-01..06
+    python -m src.xsubj.submit --model ridge               # ridge only (fits on all trn splits)
     python -m src.xsubj.submit ... --subjects sub-01 sub-05 sub-06 --col-norm
 """
 from __future__ import annotations
@@ -45,28 +49,33 @@ def check_and_score(ranked: np.ndarray, truth: np.ndarray | None) -> str:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="configs/xsubj.yaml")
-    ap.add_argument("--model", choices=["encoder", "ridge"], required=True)
-    ap.add_argument("--checkpoint", default=None, help="encoder checkpoint (from src.xsubj.train)")
-    ap.add_argument("--subjects", nargs="+", default=["sub-01", "sub-05", "sub-06"])
+    ap.add_argument("--model", choices=["ensemble", "encoder", "ridge"], default="ensemble")
+    ap.add_argument("--checkpoint", default="models/xsubj/checkpoints/all/model.pt",
+                    help="encoder checkpoint (from src.xsubj.train)")
+    ap.add_argument("--subjects", nargs="+", default=[f"sub-0{i}" for i in range(1, 7)])
     ap.add_argument("--col-norm", action="store_true", help="z-score each candidate's similarities")
     ap.add_argument("--out", default="submissions")
     args = ap.parse_args()
 
-    if args.model == "encoder":
-        import torch
-        cfg = torch.load(args.checkpoint, map_location="cpu", weights_only=False)["cfg"]
-    else:
-        cfg = load_config(args.config)
+    import torch
+    cfg = load_config(args.config)
+    if args.model in ("encoder", "ensemble"):
+        ck_cfg = torch.load(resolve(args.checkpoint), map_location="cpu", weights_only=False)["cfg"]
+        if args.model == "encoder":
+            cfg = ck_cfg
+        elif ck_cfg["preprocess"] != cfg["preprocess"] or ck_cfg["data"] != cfg["data"]:
+            raise SystemExit("encoder checkpoint was trained with other data/preprocessing settings "
+                             f"than {args.config}; retrain it with python -m src.xsubj.train")
     seed_everything(cfg["seed"])
     data = load_preprocessed(cfg)
     bank = load_video_bank(cfg)
     cand_emb = bank.emb[bank.lookup(CANDIDATES.astype(str))]
 
-    if args.model == "encoder":
-        model, ck = load_checkpoint(args.checkpoint, bank.dim)
+    if args.model in ("encoder", "ensemble"):
+        model, ck = load_checkpoint(resolve(args.checkpoint), bank.dim)
         model.to(get_device())
         lut = {s: i for i, s in enumerate(ck["subject_list"])}
-    else:
+    if args.model in ("ridge", "ensemble"):
         train = Trials([d for d in data if d.split == "trn"], bank, [])
         ridge = RidgeDecoder(cfg["ridge"], data[0].fs, data[0].tmin).fit(train.X, bank.emb[train.y])
         path = resolve("models/xsubj/checkpoints/ridge/ridge.joblib")
@@ -78,10 +87,13 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     for subject in args.subjects:
         d = next(d for d in data if d.subject == subject and d.split == "tst")  # original recording order
-        if args.model == "encoder":
-            pred = embed(model, d.X, np.full(len(d.X), lut.get(subject, -1)), get_device())
-        else:
-            pred = ridge.predict(d.X)
+        preds = []
+        if args.model in ("encoder", "ensemble"):
+            preds.append(embed(model, d.X, np.full(len(d.X), lut.get(subject, -1)), get_device()))
+        if args.model in ("ridge", "ensemble"):
+            preds.append(ridge.predict(d.X))
+        pred = np.sum(preds, 0)
+        pred /= np.linalg.norm(pred, axis=1, keepdims=True)
         ranked = ranked_candidates(pred, cand_emb, args.col_norm).astype(np.int64)
         np.save(out / f"{subject}_ranked_candidate_list.npy", ranked)
         truth = d.video_id.astype(int) if d.video_id is not None else None

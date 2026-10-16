@@ -39,13 +39,15 @@ preprocess:
   euclidean_alignment: true    # per-subject whitening; label-free, so valid for test subjects too
 
 model:
-  arch: shallow                # shallow | eegnet
+  crop: [0.05, 0.6]            # encoder input window (s after onset); same as the ridge default
+  arch: shallow                # shallow | eegnet | mlp | linear
   n_filters: 40
   temporal_kernel: 13           # ~130 ms at 100 Hz
   pool: 25
   pool_stride: 10
   nonlin: elu                  # elu (keeps ERP phase) | square_log (band power, classic ShallowConvNet)
   dropout: 0.5
+  input_dropout: 0.0           # mlp / linear: dropout on the flattened input
   hidden: 512
   subject_layer: true          # per-subject channel mixing, identity-initialised
 
@@ -59,6 +61,9 @@ train:
   mse_weight: 0.5              # weight of (1 - cosine) regression term toward the target embedding
   val_frac: 0.1                # fraction of training *videos* held out for early stopping
   patience: 25
+  xsubj_avg:                   # replace a trial by its average with same-video trials of other subjects
+    prob: 0.0                  # tested 0.5: no gain for ridge or encoder (see idea-3 runs)
+    k: [2, 3, 4]
   amp: true                    # mixed precision (CUDA only)
   aug:
     time_shift: 0.05           # max shift in seconds

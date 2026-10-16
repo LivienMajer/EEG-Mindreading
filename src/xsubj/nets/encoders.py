@@ -67,27 +67,58 @@ class EEGNetBackbone(nn.Module):
         return self.net(x.unsqueeze(1))
 
 
+class FlatBackbone(nn.Module):
+    """No convolutions: the trial flattened to channels x samples (what ridge sees, minus binning)."""
+
+    def __init__(self, n_channels, n_times, dropout=0.0, **_):
+        super().__init__()
+        self.drop = nn.Dropout(dropout)
+        self.out_dim = n_channels * n_times
+
+    def forward(self, x):
+        return self.drop(x.flatten(1))
+
+
 class EEGEncoder(nn.Module):
-    def __init__(self, n_channels, n_times, emb_dim, n_subjects, m: dict, temperature=0.07):
+    """Optional input crop (model.crop, seconds after onset) -> subject layer -> backbone -> head.
+
+    arch: shallow | eegnet (convolutional), mlp (flattened input + MLP head),
+          linear (flattened input + one linear layer: ridge's model class trained with InfoNCE).
+    """
+
+    def __init__(self, n_channels, n_times, emb_dim, n_subjects, m: dict, temperature=0.07,
+                 fs: float = 100.0, tmin: float = 0.0):
         super().__init__()
         self.backbone_in = (n_channels, n_times)
+        if m.get("crop"):
+            self.crop = (max(0, int(round((m["crop"][0] - tmin) * fs))),
+                         min(n_times, int(round((m["crop"][1] - tmin) * fs))))
+        else:
+            self.crop = (0, n_times)
+        n_t = self.crop[1] - self.crop[0]
         self.subject_layer = SubjectLayer(n_subjects, n_channels) if m["subject_layer"] else None
         kw = dict(dropout=m["dropout"])
         if m["arch"] == "shallow":
             kw.update(n_filters=m["n_filters"], temporal_kernel=m["temporal_kernel"], pool=m["pool"],
                       pool_stride=m["pool_stride"], nonlin=m["nonlin"])
-            self.backbone = ShallowBackbone(n_channels, n_times, **kw)
+            self.backbone = ShallowBackbone(n_channels, n_t, **kw)
         elif m["arch"] == "eegnet":
-            self.backbone = EEGNetBackbone(n_channels, n_times, **kw)
+            self.backbone = EEGNetBackbone(n_channels, n_t, **kw)
+        elif m["arch"] in ("mlp", "linear"):
+            self.backbone = FlatBackbone(n_channels, n_t, dropout=m.get("input_dropout", 0.0))
         else:
             raise ValueError(m["arch"])
-        self.head = nn.Sequential(
-            nn.Linear(self.backbone.out_dim, m["hidden"]), nn.GELU(), nn.Dropout(m["dropout"]),
-            nn.Linear(m["hidden"], emb_dim),
-        )
+        if m["arch"] == "linear":
+            self.head = nn.Linear(self.backbone.out_dim, emb_dim)
+        else:
+            self.head = nn.Sequential(
+                nn.Linear(self.backbone.out_dim, m["hidden"]), nn.GELU(), nn.Dropout(m["dropout"]),
+                nn.Linear(m["hidden"], emb_dim),
+            )
         self.logit_scale = nn.Parameter(torch.tensor(1 / temperature).log())
 
     def forward(self, x, subj):
+        x = x[..., self.crop[0]: self.crop[1]]
         if self.subject_layer is not None:
             x = self.subject_layer(x, subj)
         return F.normalize(self.head(self.backbone(x)), dim=-1)
