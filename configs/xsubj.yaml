@@ -87,10 +87,11 @@ eval:
   average_repeats: true        # also report accuracy after averaging repeats of the same video
   n_permutations: 1000
 
-submit:                        # default submission: ridge + mean of these encoders (equal weight)
+submit:                        # default submission: 3 equal votes = mean of these encoders, pooled ridge,
+                               #   per-subject ridge (both ridges are fitted by src.xsubj.submit itself)
   # trained with: python -m src.xsubj.train                     -> all (shallow, seed 0)
   #               python -m src.xsubj.train --set seed=N --out shallow_sN                  (N = 1..4)
   #               python -m src.xsubj.train --set seed=N model.arch=mlp model.input_dropout=0.2 --out mlp_sN  (N = 0..2)
   #               python -m src.xsubj.train --set seed=0 model.arch=eegnet --out eegnet_s0
-  # dev (sub-01..04, per-candidate normalisation): top-1 10.8%, top-5 36.3%, mean rank 16.2
+  # dev (sub-01..04, per-candidate normalisation): top-1 13.2%, top-5 43.1%, mean rank 14.2
   encoders: [all, shallow_s1, shallow_s2, shallow_s3, shallow_s4, mlp_s0, mlp_s1, mlp_s2, eegnet_s0]

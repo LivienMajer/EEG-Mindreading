@@ -5,13 +5,17 @@ in its original order, holding the 102 candidate video IDs (1001..1102) from mos
 likely. Subjects with tst_stim labels (sub-01..04) are scored with the organisers' formula,
 which checks the format end to end.
 
-Default model: ensemble = ridge + the mean of the encoders listed under `submit.encoders` in the
-config (9: 5x ShallowConvNet, 3x MLP, 1x EEGNet), equal weight in CLIP space, ranked after
-per-candidate normalisation. Dev (sub-01..04): top-1 10.8%, top-5 36.3%, mean rank 16.2
-(ridge + one ShallowConvNet: 10.5% / 35.3% / 16.8; ridge alone 9.8% / 33.1% / 18.9).
+Default model: ensemble of three equal votes in CLIP space, ranked after per-candidate
+normalisation:
+  1. the mean of the encoders listed under `submit.encoders` (5x ShallowConvNet, 3x MLP, 1x EEGNet)
+  2. pooled ridge, trained on the trn splits of all six subjects
+  3. per-subject ridge, trained on the subject's own trn split only
+Dev (sub-01..04): top-1 13.2%, top-5 43.1%, mean rank 14.2 (votes 1+2 only: 10.8% / 36.3% / 16.2;
+pooled ridge alone 9.8% / 33.1% / 18.9).
 
     python -m src.xsubj.submit                             # ensemble, sub-01..06
-    python -m src.xsubj.submit --model ridge               # ridge only (fits on all trn splits)
+    python -m src.xsubj.submit --model ridge               # pooled ridge only (fits on all trn splits)
+    python -m src.xsubj.submit --model subject-ridge       # per-subject ridge only
     python -m src.xsubj.submit --encoders all mlp_s0       # other encoder set (checkpoint folder names)
     python -m src.xsubj.submit ... --subjects sub-01 sub-05 sub-06 --no-col-norm
 """
@@ -51,7 +55,7 @@ def check_and_score(ranked: np.ndarray, truth: np.ndarray | None) -> str:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="configs/xsubj.yaml")
-    ap.add_argument("--model", choices=["ensemble", "encoder", "ridge"], default="ensemble")
+    ap.add_argument("--model", choices=["ensemble", "encoder", "ridge", "subject-ridge"], default="ensemble")
     ap.add_argument("--encoders", nargs="+", default=None,
                     help="checkpoint folders under models/xsubj/checkpoints (default: submit.encoders)")
     ap.add_argument("--subjects", nargs="+", default=[f"sub-0{i}" for i in range(1, 7)])
@@ -83,13 +87,24 @@ def main():
             model, ck = load_checkpoint(path, bank.dim)
             encoders.append((model.to(get_device()), {s: i for i, s in enumerate(ck["subject_list"])}))
         print(f"{len(encoders)} encoders: {' '.join(names)}")
+    fs, tmin = data[0].fs, data[0].tmin
     if args.model in ("ridge", "ensemble"):
         train = Trials([d for d in data if d.split == "trn"], bank, [])
-        ridge = RidgeDecoder(cfg["ridge"], data[0].fs, data[0].tmin).fit(train.X, bank.emb[train.y])
+        ridge = RidgeDecoder(cfg["ridge"], fs, tmin).fit(train.X, bank.emb[train.y])
         path = resolve("models/xsubj/checkpoints/ridge/ridge.joblib")
         path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump({"model": ridge, "cfg": cfg}, path)
         print(f"saved {path}")
+    if args.model in ("subject-ridge", "ensemble"):
+        subject_ridge = {}
+        for d in data:
+            if d.split == "trn":
+                tr = Trials([d], bank, [])
+                subject_ridge[d.subject] = RidgeDecoder(cfg["ridge"], fs, tmin).fit(tr.X, bank.emb[tr.y])
+        path = resolve("models/xsubj/checkpoints/ridge_subject/ridge_subject.joblib")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        joblib.dump({"models": subject_ridge, "cfg": cfg}, path)
+        print(f"saved {path} ({len(subject_ridge)} subjects)")
 
     out = resolve(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -102,6 +117,8 @@ def main():
             preds.append(enc / np.linalg.norm(enc, axis=1, keepdims=True))
         if args.model in ("ridge", "ensemble"):
             preds.append(ridge.predict(d.X))
+        if args.model in ("subject-ridge", "ensemble"):
+            preds.append(subject_ridge[subject].predict(d.X))
         pred = np.sum(preds, 0)
         pred /= np.linalg.norm(pred, axis=1, keepdims=True)
         ranked = ranked_candidates(pred, cand_emb, args.col_norm).astype(np.int64)
