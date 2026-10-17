@@ -17,6 +17,7 @@ The member set mirrors the sub-05/06 submission situation exactly:
   and transfer rankings from the other subjects' models.
 
 Usage:  python -m src.loo_generalization
+        python -m src.loo_generalization --ed-dir work/ed_5e3154e   # other E-D checkpoint
 """
 
 from __future__ import annotations
@@ -32,12 +33,15 @@ PROBE = "work/xsubj_probe"
 
 # member files per subject, fixed order for the weight vector:
 # [clip 9, alexnet 9, ed w, ridge r, transfer, transfer, transfer]
+ED_DIR = TST
+
+
 def members(s: str) -> list[np.ndarray]:
     others = [o for o in SUBS if o != s]
     m = [
         np.load(f"{TST}/infonce_{s}_emb_train__clip-vitb32_s0.npy"),
         np.load(f"{TST}/infonce_{s}_emb_train__alexnet-f3_s0.npy"),
-        np.load(f"{TST}/ed_{s}_xsubj_s0.npy"),
+        np.load(f"{ED_DIR}/ed_{s}_xsubj_s0.npy"),
         np.load(f"{TST}/ridge_{s}_{E}.npy"),
     ]
     m += [np.load(f"{PROBE}/ranked_tr{o}_te{s}_{E}.npy") for o in others]
@@ -65,6 +69,11 @@ def topk(ranked: np.ndarray, y: np.ndarray):
 
 
 def main():
+    import argparse
+    global ED_DIR
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--ed-dir", default=TST, help="folder with ed_XX_xsubj_s0.npy")
+    ED_DIR = ap.parse_args().ed_dir
     truths = {s: np.load(f"{TST}/truth_{s}_s0.npy") for s in SUBS}
     M = {s: members(s) for s in SUBS}
 

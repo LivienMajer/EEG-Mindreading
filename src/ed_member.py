@@ -9,8 +9,13 @@ preprocessing cache (which would reprocess all 12 subject/split combinations).
 Outputs per subject, in ORIGINAL tst.npy row order (no label sorting):
     work/ed_member/ranked_subXX.npy   (102, 102) int64, video ids 1001..1102
 
+With --dev-sorted-dir, the labeled subjects (sub-01..04) are also written LABEL-SORTED
+(np.argsort(tst.y)) as <dir>/ed_XX_xsubj_s0.npy, the file loo_generalization reads.
+
 Usage:
   python -m src.ed_member --data-dir provided_material/eeg-mind-reading-challenge/eeg-mind-reading-challenge
+  python -m src.ed_member --data-dir <root> --checkpoint <model.pt> --out work/ed_member \
+      --dev-sorted-dir work/tst_ranked
 """
 
 from __future__ import annotations
@@ -28,6 +33,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", required=True)
     ap.add_argument("--checkpoint", default="models/xsubj/checkpoints/all/model.pt")
+    ap.add_argument("--out", default="work/ed_member", help="original-order dumps")
+    ap.add_argument("--dev-sorted-dir", default=None,
+                    help="also write label-sorted dev dumps ed_XX_xsubj_s0.npy here")
     ap.add_argument("--subjects", nargs="+",
                     default=["01", "02", "03", "04", "05", "06"])
     args = ap.parse_args()
@@ -56,8 +64,10 @@ def main():
     cand = bank.emb[bank.lookup(TEST_VIDEO_IDS.astype(str))]
 
     root = Path(args.data_dir)
-    out = Path("work/ed_member")
+    out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
+    if args.dev_sorted_dir:
+        Path(args.dev_sorted_dir).mkdir(parents=True, exist_ok=True)
 
     for sub in args.subjects:
         tst = load_test_subject(root, sub)
@@ -72,6 +82,8 @@ def main():
         ranked = TEST_VIDEO_IDS[np.argsort(-sim, axis=1, kind="stable")].astype(np.int64)
         np.save(out / f"ranked_sub{sub}.npy", ranked)
 
+        if tst.y is not None and args.dev_sorted_dir:
+            np.save(Path(args.dev_sorted_dir) / f"ed_{sub}_xsubj_s0.npy", ranked[np.argsort(tst.y)])
         if tst.y is not None:
             t1 = float((ranked[:, 0] == tst.y).mean())
             t5 = float((ranked[:, :5] == tst.y[:, None]).any(1).mean())
