@@ -87,4 +87,7 @@ models/xsubj/checkpoints/*
 !models/xsubj/features/
 models/xsubj/features/*
 !models/xsubj/features/clip_vitb32.npz
+!models/xsubj/features/clap.npz
+!models/xsubj/members/
+!models/xsubj/members/**
 !submissions/sub-0[56]_ranked_candidate_list.npy
