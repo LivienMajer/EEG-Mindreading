@@ -64,7 +64,22 @@ BOLD-Format in das `caption_videos.py`-Schema.
   nur 3–9%, rescue ~0–1% — der Raum ist maximal divers zum CLIP-Bildraum,
   nur die Solo-Stärke fehlt. Deshalb E-T3b: **InfoNCE auf dem Caption-Raum**
   (beim Bild-CLIP war InfoNCE 3,2× stronger als Ridge: 11.03 vs 3.43;
-  skaliert auf Captions ≈ 8–10% solo). Läuft (4 dev Subjects, 200 Epochen).
+- **E-T3b, Caption-`infonce` als 10. Member (`src/loo_captions.py`)**: Solo
+  4.90/20.59 dev mean (sub-01: 6.86/23.53, sonst 3.9–4.9%) — InfoNCE nur
+  1.5× Ridge (beim Bild-CLIP: 3.2×), die ~8–10%-Extrapolation zog nicht.
+  LOO wählt `w_cap=0` in 3/4 Folds; der eine Fold mit w_cap=0.5 verliert auf
+  dem gehaltenen Subject (19.61 vs 20.61). Held-out 22.30/48.28 vs 9-member-
+  Referenz 23.04/48.28 → **NO-GO. 9-Member-Fusion und Submissions bleiben
+  unverändert.**
+- **E-T Gesamtfazit (Report/Presentation-Material)**: Der Text-Anker-Raum
+  ist nachweisbar valide (Gate 0: img→txt top-1 91.2% tst) und maximal divers
+  (3–9% top-1-Übereinstimmung mit allen Bild-Raum-Members), aber die
+  EEG→Text-Repräsentation ist zu schwach (4.9% solo vs 11.0% Bild-CLIP):
+ vernunftgemäßes „EEG beschreibt *Was* das Subjekt sah" funktioniert
+  schlechter als „EEG codet *Wie* das Video aussieht". Diversity schlägt
+  Solo-Stärke nur bis zur Solo-Untergrenze ~Ridge-Niveau; darunter hilft
+  auch null Overlap nicht mehr. Sauber geloggte Negativkette E-T2→E-T3a→E-T3b
+  in `work/scores.csv` (experiment `loo-heldout-caption`).
 
 ## Ausführung
 
