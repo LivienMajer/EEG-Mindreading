@@ -183,6 +183,15 @@ torchvision 0.29.1, transformers 5.20.1, av 18.1.0, decord 0.6.0, mne 1.13.2.
   the right-lateral peak, not at the left-lateral one (subjects vary). Electrical
   pick-up from headphones would also be lateral but has no delay; the signal is weak
   before 45 ms and peaks at 105-125 ms, which argues for a cortical response.
+- **Brain-likeness predicts decoding.** Livien's per-subject InfoNCE EEGNet trained toward
+  each of 9 of these feature sets (only the target changed): the more brain-like the
+  embedding in the RSA, the better the decoder (Spearman rho = 0.69, p = 0.038 for top-1;
+  0.80, p = 0.017 without the 30-dimensional loudness target, which has too few
+  dimensions to tell 102 videos apart). AlexNet fc6 17.2% / 41.7% and VideoMAE-l8
+  13.0% / 44.9% beat the team's CLIP target (11.0% / 33.1%); added to the megafusion
+  with Daniel's retrained network: LOO 24.02% / 55.15% vs 22.30% / 48.28% (top-5
+  p < 0.001, top-1 n.s.). Code and commands: `docs/megafusion_rebuild.md` on branch
+  `experiment/eegnet-preprocessing`.
 - **Channel order:** the organizers' names follow the file rows (channel correlation
   falls with scalp distance, rho = 0.93; random orders <= 0.45, p = 0.0002).
 
