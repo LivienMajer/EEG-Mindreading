@@ -23,7 +23,6 @@ from pathlib import Path
 
 import numpy as np
 from scipy.signal import decimate
-from sklearn.decomposition import PCA
 from sklearn.linear_model import RidgeCV
 from sklearn.preprocessing import StandardScaler
 
@@ -32,6 +31,41 @@ from .challenge_data import TEST_VIDEO_IDS, load_test_subject, load_train_subjec
 # from snr_probe study: 50-350 ms @ 100 Hz wins; 50-600 as organizer reference
 WINDOWS = {"snr": (5, 35), "org": (5, 60)}
 KEY_TEMPLATE = "{vid:05d}_f{k:02d}"
+
+
+class HighDimPCA:
+    """PCA for n_samples << n_features (e.g. 900 trials x 140k features).
+
+    sklearn's covariance_eigh/`full` solvers build or SVD the (p x p) matrix,
+    which is impossible at this scale. Instead we eigendecompose the small
+    (n x n) Gram matrix -- mathematically identical PCA.
+
+    Interface follows sklearn: fit(X) -> self, transform(X) -> projection.
+    """
+
+    def __init__(self, variance_ratio=0.95):
+        self.variance_ratio = variance_ratio
+
+    def fit(self, X):
+        self.mean_ = X.mean(axis=0)
+        Xc = X - self.mean_
+        G = Xc @ Xc.T / (len(Xc) - 1)          # (n, n) Gram
+        evals, evecs = np.linalg.eigh(G)       # ascending order
+        evals = np.maximum(evals[::-1], 0.0)   # descending, clip numerical noise
+        total = evals.sum()
+        n_keep = int(np.searchsorted(np.cumsum(evals) / total,
+                                     self.variance_ratio) + 1)
+        n_keep = min(n_keep, len(evals) - 1)
+        # components in feature space: rows of Xc.T @ evec, normalized so that
+        # components_ are unit-norm and orthonormal (dual PCA).
+        ek = evecs[:, ::-1][:, :n_keep]        # columns follow descending evals
+        comps = Xc.T @ ek
+        comps /= np.linalg.norm(comps, axis=0, keepdims=True) + 1e-12
+        self.components_ = comps.T              # (n_keep, p)
+        return self
+
+    def transform(self, X):
+        return (X - self.mean_) @ self.components_.T
 
 
 def video_matrix(emb, video_ids, agg="mean", n_frames=8):
@@ -64,9 +98,7 @@ def fit_forward(X_feat, X_eeg_win):
     """
     sc = StandardScaler().fit(X_feat)
     X_z = sc.transform(X_feat)
-    # n_samples (<=~5800) << n_features (up to 140k+): covariance_eigh is
-    # exact, fast and memory-safe here; svd_solver='full' would be O(n_feat^3).
-    pca = PCA(n_components=0.95, svd_solver="covariance_eigh").fit(X_z)
+    pca = HighDimPCA(variance_ratio=0.95).fit(X_z)
     X_p = pca.transform(X_z)
     sc2 = StandardScaler().fit(X_p)
     model = RidgeCV(alphas=np.logspace(-3, 6, 20))
