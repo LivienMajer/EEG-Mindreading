@@ -1,4 +1,4 @@
-# Megafusion: independent rebuild and two improvements (17 Oct, Sofiya)
+# Megafusion: independent rebuild and improvements (17 Oct, Sofiya)
 
 The megafusion (`docs/final_pipeline.md`) was rebuilt from the code alone on a CPU
 laptop, without any of Livien's local files. Every member and the final LOO result
@@ -102,6 +102,76 @@ to tell 102 videos apart) 0.80 (p = 0.017) and 0.81 (p = 0.015).
 Seeds (`python -m src.member_check --tags _fc6 --seeds 0 1 2`, needs `prep_variants
 --seed 1/2` dumps of the CLIP member): 11.0 / 10.3 / 10.0% top-1; their mean-rank average
 9.3 / 35.3% (rank better than seed 0, p = 0.003; top-1 not, p = 0.21).
+
+## 4. Daniel's cross-subject networks toward fc6 / VideoMAE-l8 (best result)
+
+Daniel's pipeline (`src/xsubj`, synced to his current branch; the old copy could not run
+his retrained checkpoint, the synced one gives identical E-D rankings), only the video
+target changed: `configs/xsubj_fc6.yaml`, `configs/xsubj_vmae8.yaml` are copies of
+`configs/xsubj.yaml` with `data.video_emb` = the RSA feature file. 4 encoders each
+(ShallowConvNet seeds 0/1, MLP, EEGNet; Daniel's settings), plus his two ridges.
+
+```bash
+mkdir -p data && ln -s <challenge root> data/eeg-mind-reading-challenge   # path in the configs
+                                                    # (Windows: New-Item -ItemType Junction)
+for n in all shallow_s1 shallow_s2 shallow_s3 shallow_s4 mlp_s0 mlp_s1 mlp_s2 eegnet_s0; do
+  mkdir -p models/xsubj/checkpoints/$n
+  git show origin/feature/clip-lowlevel-forward-model:models/xsubj/checkpoints/$n/model.pt > models/xsubj/checkpoints/$n/model.pt; done
+python -m src.xsubj.submit --config configs/xsubj.yaml --out work/xsubj_clip       # Daniel's CLIP ensemble
+for t in fc6 vmae8; do c=configs/xsubj_$t.yaml                                     # ~10 min each, CPU
+  python -m src.xsubj.train --config $c --out ${t}_shallow_s0
+  python -m src.xsubj.train --config $c --set seed=1 --out ${t}_shallow_s1
+  python -m src.xsubj.train --config $c --set model.arch=mlp model.input_dropout=0.2 --out ${t}_mlp_s0
+  python -m src.xsubj.train --config $c --set model.arch=eegnet --out ${t}_eegnet_s0
+  python -m src.xsubj.submit --config $c --out work/xsubj_$t; done
+for p in clip:_dclip fc6:_dfc6 vmae8:_dvmae8; do
+  python -m src.xsubj_member --src work/xsubj_${p%%:*} --tag ${p##*:} --data-dir $D; done
+python -m src.loo_new_members --ed-dir work/ed_5e3154e --tags _fc6 _vmae8 _dfc6 _dvmae8
+```
+
+| Daniel-style ensemble (sub-01..04 tst) | encoders | top-1 | top-5 |
+|---|---|---|---|
+| CLIP (Daniel's submission, reproduced exactly) | 9 | 17.65 | 47.79 |
+| **AlexNet fc6** | 4 | **19.36** | **52.45** |
+| **VideoMAE layer 8** | 4 | **20.59** | 50.98 |
+
+Megafusion with the new E-D checkpoint + per-subject fc6/VideoMAE members + these two
+(LOO, weights for the new members chosen on 3 subjects, scored on the 4th):
+
+| Fusion (LOO held-out mean) | top-1 | top-5 | mean rank |
+|---|---|---|---|
+| current megafusion | 22.30 | 48.28 | 12.03 |
+| + new E-D, fc6, VideoMAE (section 2) | 24.02 | 55.15 | 10.12 |
+| **+ Daniel-style fc6 and VideoMAE** | **29.41** | **63.24** | **7.87** |
+
+Per held-out subject: 35.3/66.7, 26.5/58.8, 23.5/60.8, 32.4/66.7. Weights
+9:9:5:2:1:1:1 + 5 (fc6) : 9 (VideoMAE) : 9 (Daniel-fc6) : 9 (Daniel-VideoMAE) in three
+folds, 9:9:9:5 in one; oracle 30.39 / 62.99. Paired vs current on 408 recordings: top-1
++49 / -20 (exact McNemar p = 0.001), top-5 +78 / -17 (p < 0.001), rank better in 230,
+worse in 81 (Wilcoxon p = 9e-22). Most new weights sit at the top of the grid (9).
+
+### Candidate submission for sub-05/06
+
+```bash
+python -m src.make_submission --data-dir $D --ed-dir work/ed_member_5e3154e \
+    --extra-tags _fc6 _vmae8 _dfc6 _dvmae8 --extra-weights 5 9 9 9 --out-dir work/submission_candidate
+python -m src.validate_submission work/submission_candidate/sub-05_ranked_candidate_list.npy $D 05
+python -m src.check_alignment --members "work/prep_variants/A_fc6_{s}_s0.npy" "work/prep_variants/A_vmae8_{s}_s0.npy" \
+    "work/prep_variants/A_dfc6_{s}_s0.npy" "work/prep_variants/A_dvmae8_{s}_s0.npy" "work/ed_member_5e3154e/ranked_sub{s}.npy"
+```
+
+Weights: the LOO choice for 3 dev transfers plus the 4th transfer at 1, as in the current
+submission. `check_alignment`: without labels, each new member's rows must agree with
+the original members far above chance (e.g. fc6 vs InfoNCE CLIP top-5 overlap 87% vs 24%
+with shifted rows); a shuffled member is caught. `make_submission` without the new
+options gives bit-identical files to before.
+
+**Expect less on sub-05/06 than on the dev subjects**, mainly sub-06: fewest training
+trials (850 vs 947-972) and the least typical responses (RSA consistency with the other
+subjects 0.010 / 0.017 at 105 / 225 ms vs 0.019-0.055 for the dev subjects, which
+decode better the more typical they are). For the rules, the encoder weights in
+`models/xsubj/checkpoints/{fc6,vmae8}_*` (git-ignored here) must be committed if this
+submission is used.
 
 Caveats: single seed everywhere; fc6 and VideoMAE-l8 were picked by the RSA, but their
 solo scores were seen on the same dev test sets, so the LOO protects the weights, not

@@ -1,0 +1,102 @@
+# Copy of configs/xsubj.yaml (Daniel) with ONE change: the video target is AlexNet fc6
+# instead of CLIP, the most brain-like embeddings in the RSA (eeg_pipeline/README.md on
+# feature/eeg-preprocessing). Encoders: see docs/megafusion_rebuild.md.
+# Cross-subject EEG -> video retrieval (src/xsubj). Everything that touches the raw data
+# format lives in src/xsubj/eeg/adapter.py. Set data.format to `synthetic` for a smoke test
+# without the challenge data.
+
+seed: 0
+
+data:
+  format: challenge            # challenge | synthetic | npz
+  challenge_dir: data/eeg-mind-reading-challenge   # unzipped organiser download (trn/, tst/, tst_stim/)
+  eeg_dir: data/eeg            # npz: one file per subject, sub-XX.npz with X, video_id, fs (+ ch_names, tmin)
+  video_emb: work/rsa_features/alexnet_fc6.npz  # AlexNet fc6 (eeg_pipeline.rsa_features) # ids + emb, a list of files (combined), or {video id: (n_frames, d)}
+  video_standardize: true      # z-score each video feature before L2-normalising
+  cache_dir: models/xsubj/cache
+  synthetic:                   # only used when format == synthetic (pipeline smoke test)
+    n_subjects: 4
+    n_videos: 200
+    reps: 2                    # presentations per video per subject
+    n_channels: 32
+    fs: 250
+    tmin: -0.2                 # epoch start relative to video onset (s)
+    tmax: 3.0
+    emb_dim: 512
+    n_sources: 8
+    snr: 0.1                   # 0.0 -> pure noise, decoding must stay at chance
+    subject_variability: 0.5   # per-subject deviation from the shared channel mixing
+    seed: 0
+
+preprocess:
+  l_freq: null                 # no high-pass: sweep_preprocess, low-pass only + no average reference
+  h_freq: 40.0                 #   (ridge votes: mean rank 15.0 -> 12.5, CV rank 0.263 -> 0.233)
+  notch: null                  # challenge data is already low-passed (no power above 45 Hz)
+  average_reference: false
+  baseline: true               # subtract mean of the pre-stimulus window (t < 0) if present
+  tmin: 0.0                    # analysis window relative to video onset (s)
+  tmax: 1.0                    # stimulus information is concentrated in the first second
+  resample: 100
+  remove_mean_response: true   # subtract the split's average response (see eeg/preprocess.py)
+  clip_std: 6.0                # clip outliers at +-clip_std per channel (after scaling)
+  euclidean_alignment: true    # per-subject whitening; label-free, so valid for test subjects too
+
+model:
+  crop: [0.05, 0.6]            # encoder input window (s after onset); same as the ridge default
+  arch: shallow                # shallow | eegnet | mlp | linear
+  n_filters: 40
+  temporal_kernel: 13           # ~130 ms at 100 Hz
+  pool: 25
+  pool_stride: 10
+  nonlin: elu                  # elu (keeps ERP phase) | square_log (band power, classic ShallowConvNet)
+  dropout: 0.5
+  input_dropout: 0.0           # mlp / linear: dropout on the flattened input
+  hidden: 512
+  subject_layer: true          # per-subject channel mixing, identity-initialised
+
+train:
+  epochs: 150
+  batch_size: 64
+  lr: 1.0e-3
+  weight_decay: 1.0e-2
+  temperature: 0.07            # initial; learnable
+  negatives: all               # all: softmax over all training videos | batch: in-batch (unique videos)
+  mse_weight: 0.5              # weight of (1 - cosine) regression term toward the target embedding
+  val_frac: 0.1                # fraction of training *videos* held out for early stopping
+  patience: 25
+  xsubj_avg:                   # replace a trial by its average with same-video trials of other subjects
+    prob: 0.0                  # tested 0.5: no gain for ridge or encoder (see idea-3 runs)
+    k: [2, 3, 4]
+  amp: true                    # mixed precision (CUDA only)
+  aug:
+    time_shift: 0.05           # max shift in seconds
+    channel_dropout: 0.1
+    noise_std: 0.1
+    scale: 0.1                 # amplitude scaling in [1-scale, 1+scale]
+
+ridge:                         # EEG features; chosen by src.xsubj.sweep_features (mean rank 18.9)
+  erp: true                    # amplitude per channel in bins (the only block carrying information)
+  erp_bin: 0.01                # 10 ms = every sample at 100 Hz
+  erp_tmin: 0.05               # decoding curve: information from ~50 ms, peak 100-300 ms,
+  erp_tmax: 0.6                #   gone after ~600 ms
+  bandpower: false             # log band power: at chance on its own, hurts mean rank when added
+  bands: {delta: [1, 4], theta: [4, 8], alpha: [8, 13], beta: [13, 30], gamma: [30, 40]}
+  riemann: false               # tangent-space covariance: at chance on its own
+  riemann_bands: null
+  alphas: [0.1, 1, 10, 100, 1000, 10000, 100000, 1000000]
+
+eval:
+  k_candidates: [2, 10, 50, all]
+  average_repeats: true        # also report accuracy after averaging repeats of the same video
+  n_permutations: 1000
+
+submit:                        # default submission: 3 equal votes = mean of these encoders, pooled ridge,
+                               #   per-subject ridge (both ridges are fitted by src.xsubj.submit itself)
+  # trained with: python -m src.xsubj.train                     -> all (shallow, seed 0)
+  #               python -m src.xsubj.train --set seed=N --out shallow_sN                  (N = 1..4)
+  #               python -m src.xsubj.train --set seed=N model.arch=mlp model.input_dropout=0.2 --out mlp_sN  (N = 0..2)
+  #               python -m src.xsubj.train --set seed=0 model.arch=eegnet --out eegnet_s0
+  # dev (sub-01..04, per-candidate normalisation): top-1 17.6%, top-5 47.8%, mean rank 11.5
+  #   (before, with 0.5-40 Hz band-pass + average reference: 13.2% / 43.1% / 14.2;
+  #    paired: rank better in 214 vs 141 recordings, p = 0.0001; top-1 47 vs 29 hits, p = 0.05)
+  encoders: [fc6_shallow_s0, fc6_shallow_s1, fc6_mlp_s0, fc6_eegnet_s0]

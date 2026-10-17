@@ -2,6 +2,7 @@
 
     python -m src.xsubj.train --config configs/xsubj.yaml                  # trn splits of all subjects
     python -m src.xsubj.train --config configs/xsubj.yaml --holdout sub-01 # leave one subject out
+    python -m src.xsubj.train --set seed=1 model.arch=mlp --out mlp_s1     # variant
     python -m src.xsubj.train --config configs/xsubj.yaml --finetune models/xsubj/checkpoints/all/model.pt --subject sub-05
 """
 from __future__ import annotations
@@ -21,7 +22,7 @@ from src.xsubj.eeg.dataset import TrialDataset, Trials
 from src.xsubj.eeg.preprocess import load_preprocessed
 from src.xsubj.metrics import retrieval_metrics
 from src.xsubj.nets.encoders import EEGEncoder
-from src.xsubj.utils import get_device, load_config, resolve, seed_everything
+from src.xsubj.utils import apply_overrides, get_device, load_config, resolve, seed_everything
 from src.xsubj.video.embeddings import VideoBank, load_video_bank
 
 
@@ -174,9 +175,11 @@ def main():
     ap.add_argument("--finetune", default=None, help="checkpoint to adapt to --subject")
     ap.add_argument("--subject", default=None)
     ap.add_argument("--out", default=None, help="run name under checkpoints/")
+    ap.add_argument("--set", nargs="+", default=[], metavar="KEY=VALUE",
+                    help="override config values, e.g. seed=1 model.arch=mlp")
     args = ap.parse_args()
 
-    cfg = load_config(args.config)
+    cfg = apply_overrides(load_config(args.config), args.set)
     seed_everything(cfg["seed"])
     data = load_preprocessed(cfg)
     bank = load_video_bank(cfg)

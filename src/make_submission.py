@@ -21,6 +21,12 @@ convention:
 
 Usage:  python -m src.make_submission \
             --data-dir provided_material/eeg-mind-reading-challenge/eeg-mind-reading-challenge
+
+Extra members (docs/megafusion_rebuild.md): --ed-dir picks the E-D rankings (e.g. Daniel's
+retrained checkpoint), --extra-tags adds work/prep_variants/A<tag>_XX_s0.npy dumps
+(original tst order for 05/06) with --extra-weights, --out-dir keeps candidates apart:
+  python -m src.make_submission --data-dir <root> --ed-dir work/ed_member_5e3154e \
+      --extra-tags _fc6 _vmae8 _dfc6 _dvmae8 --extra-weights 5 9 9 9 --out-dir work/submission_candidate
 """
 
 from __future__ import annotations
@@ -120,24 +126,32 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", required=True)
     ap.add_argument("--subjects", nargs="+", default=["05", "06"])
+    ap.add_argument("--ed-dir", default="work/ed_member", help="E-D rankings, original order")
+    ap.add_argument("--extra-tags", nargs="*", default=[], help="extra members A<tag>_XX_s0.npy")
+    ap.add_argument("--extra-weights", nargs="*", type=float, default=[])
+    ap.add_argument("--out-dir", default="submissions")
     args = ap.parse_args()
     root = Path(args.data_dir)
+    if len(args.extra_tags) != len(args.extra_weights):
+        raise SystemExit("--extra-tags and --extra-weights must have the same length")
+    weights = WEIGHTS + list(args.extra_weights)
 
-    out_dir = Path("submissions")
-    out_dir.mkdir(exist_ok=True)
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     for sub in args.subjects:
         members = [
             infonce_member(sub, CLIP),
             infonce_member(sub, ALEX),
-            np.load(f"work/ed_member/ranked_sub{sub}.npy"),
+            np.load(f"{args.ed_dir}/ranked_sub{sub}.npy"),
             ridge_member(sub, CLIP),
         ]
         members += [transfer_member(sub, d, CLIP) for d in DEV]
-        fused = fuse_mean_rank(members, WEIGHTS)
+        members += [np.load(f"work/prep_variants/A{t}_{sub}_s0.npy") for t in args.extra_tags]
+        fused = fuse_mean_rank(members, weights)
         path = out_dir / f"sub-{sub}_ranked_candidate_list.npy"
         np.save(path, fused.astype(np.int64))
-        print(f"sub-{sub}: fused 8 members with weights {WEIGHTS} -> {path}")
+        print(f"sub-{sub}: fused {len(members)} members with weights {weights} -> {path}")
 
 
 if __name__ == "__main__":
