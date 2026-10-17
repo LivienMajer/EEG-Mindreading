@@ -1,40 +1,48 @@
-# `src.xsubj`: cross-subject EEG encoder
+# Cross-subject EEG retrieval
 
-The EEG side of the pipeline, built for the held-out test subjects. It reads the team's data format (`src/load_data.py`) and the video embeddings written by `src/video_embeddings.py`.
+`src.xsubj` maps EEG trials into the embedding space of the video candidates.
+The repository-root [README](../../README.md) documents the full sequence,
+including image/audio feature extraction, validation, final training, and
+submission generation.
 
-## Usage
+## Commands
 
-```bash
-python -m src.xsubj.eval  --config configs/xsubj.yaml                 # leave-one-subject-out: ridge + encoder
-python -m src.xsubj.eval  --config configs/xsubj.yaml --models ridge  # baseline only (seconds)
-python -m src.xsubj.train --config configs/xsubj.yaml                 # final model on all labeled subjects
-python -m src.xsubj.train --config configs/xsubj.yaml --finetune models/xsubj/checkpoints/all/model.pt --subject subject_05
-python -m src.xsubj.predict --checkpoint models/xsubj/checkpoints/all/model.pt --subjects subject_05 subject_06
+Run these from the repository root after producing the four archives named in
+`configs/xsubj.yaml`:
+
+```powershell
+python -m src.xsubj.eval --config configs/xsubj.yaml --models ridge
+python -m src.xsubj.eval --config configs/xsubj.yaml
+python -m src.xsubj.train --config configs/xsubj.yaml
+python -m src.xsubj.submit --config configs/xsubj.yaml --subjects sub-05 sub-06
 ```
 
-- **Data:** with `data.format: synthetic` (the default) it runs on generated data. Switch to `repo` once `data/train` and `data/test` exist.
-- **Outputs:** everything goes to `models/xsubj/` (gitignored): checkpoints, LOSO results JSON, prediction CSVs and the preprocessing cache.
+`eval` reports retrieval accuracy for labeled test trials (subjects 01–04).
+Its encoder training uses a video-level holdout from the training trials for
+early stopping; the test split is used only for scoring. `train` fits the
+final encoder on the labeled training trials from all subjects and saves
+`models/xsubj/checkpoints/all/model.pt`. `submit` combines that checkpoint
+with the Ridge decoder by default, then writes ranked candidate arrays for
+subjects 05 and 06.
 
-## What's different from the scaffold
+## Components
 
-**Preprocessing** (`eeg/preprocess.py`):
-- Band-pass, notch, average reference, baseline, crop, resample to 128 Hz, per-subject scaling.
-- **Euclidean alignment**: each subject's trials are whitened by their own mean spatial covariance. It needs no labels, so it also runs on the test subjects.
+- `eeg/adapter.py`: challenge and synthetic EEG data loading.
+- `eeg/preprocess.py`: per-subject/split signal preprocessing and caching.
+- `eeg/dataset.py`: trial/label alignment with the video embedding bank.
+- `video/embeddings.py`: standardized archive loading, model-space fusion,
+  and video-ID lookup.
+- `nets/encoders.py`: EEGNet, shallow, and MLP encoders plus subject-specific
+  channel mixing.
+- `nets/ridge.py`: Ridge decoder and ERP/bandpower/covariance features.
+- `train.py`: contrastive EEG encoder training and checkpoint handling.
+- `eval.py`: labeled retrieval evaluation.
+- `submit.py`: ranked candidate generation.
 
-**Encoder** (`nets/encoders.py`): a ShallowConvNet or EEGNet backbone, plus a per-subject channel-mixing layer. Unseen subjects use the mean mixing matrix.
-
-**Loss** (`train.py`):
-- InfoNCE over *all* training videos, so repeated videos in a batch are never treated as negatives.
-- A cosine regression term and a learnable temperature.
-- Early stopping on held-out videos.
-
-**Evaluation** (`eval.py`, `metrics.py`):
-- Leave-one-subject-out for both the ridge baseline and the encoder.
-- Top-1/top-5 among k candidates (2, 10, 50, all), with chance levels.
-- A permutation test and accuracy after averaging repeats.
-
-**Fine-tuning** (`--finetune`): for partially held-out subjects, only a new subject layer is trained on their labeled trials.
-
-## Assumption to check when the data arrives
-
-Video ids: the encoder matches the EEG label `str(y)` against the keys of `video_embeddings.npz` (the video file stems). If labels are ints and files are named `video_001.mp4`, add the mapping in `eeg/adapter.py::_load_repo`.
+Image and audio extractors must provide archives with `video_ids` and
+`embeddings`. Train and test archives from the same model are merged; distinct
+model spaces are normalized independently and concatenated at equal norm.
+The final concatenated vectors are normalized too; when a modality is missing,
+its block remains zero and the available modality retains unit norm. The
+default config combines ViT-B/32 and CLAP. Re-extract older archives if they
+do not have the standardized schema.

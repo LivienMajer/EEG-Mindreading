@@ -1,0 +1,70 @@
+seed: 42
+
+data:
+  format: challenge
+  challenge_dir: .
+  cache_dir: models/xsubj/cache
+  video_emb:
+    - work/train_vit_b32.npz
+    - work/test_vit_b32.npz
+    - work/train_clap.npz
+    - work/test_clap.npz
+
+preprocess:
+  l_freq: 0.5
+  h_freq: 45.0
+  notch: null
+  average_reference: true
+  baseline: false
+  tmin: 0.0
+  tmax: 1.0
+  resample: 128.0
+  remove_mean_response: true
+  clip_std: 8.0
+  euclidean_alignment: true
+
+model:
+  arch: eegnet
+  width: 16
+  dropout: 0.4
+  subject_layer: true
+
+train:
+  epochs: 80
+  patience: 12
+  val_frac: 0.15
+  batch_size: 256
+  lr: 0.0003
+  weight_decay: 0.0001
+  temperature: 0.07
+  negatives: in_batch
+  mse_weight: 0.1
+  amp: true
+  aug:
+    time_shift: 0.02
+    channel_dropout: 0.05
+    scale: 0.1
+    noise_std: 0.02
+  xsubj_avg:
+    prob: 0.25
+    k: [2, 3, 4]
+
+ridge:
+  alphas: [0.1, 1, 10, 100, 1000]
+  erp: true
+  erp_bin: 0.05
+  erp_tmin: 0.0
+  erp_tmax: 1.0
+  bandpower: true
+  bands:
+    - [1, 4]
+    - [4, 8]
+    - [8, 13]
+    - [13, 30]
+  riemann: false
+  riemann_bands: null
+
+eval:
+  k_candidates: [2, 10, 50, all]
+  n_permutations: 1000
+  average_repeats: true
