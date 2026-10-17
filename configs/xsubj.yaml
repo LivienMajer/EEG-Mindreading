@@ -5,10 +5,8 @@ data:
   challenge_dir: .
   cache_dir: models/xsubj/cache
   video_emb:
-    - work/train_vit_b32.npz
-    - work/test_vit_b32.npz
-    - work/train_clap.npz
-    - work/test_clap.npz
+    - work/emb_train__clip-clap.npz
+    - work/emb_test__clip-clap.npz
 
 preprocess:
   l_freq: 0.5

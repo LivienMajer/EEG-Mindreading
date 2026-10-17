@@ -39,10 +39,11 @@ subjects 05 and 06.
 - `eval.py`: labeled retrieval evaluation.
 - `submit.py`: ranked candidate generation.
 
-Image and audio extractors must provide archives with `video_ids` and
-`embeddings`. Train and test archives from the same model are merged; distinct
+The default config points at the existing combined CLIP+CLAP archives in
+`work/`. The loader accepts both these legacy per-video/frame-key archives
+(pooling frames as needed) and the newer standardized `video_ids` plus
+`embeddings` format. If using separate standardized image/audio archives,
+list the train and test files for each model under `data.video_emb`; distinct
 model spaces are normalized independently and concatenated at equal norm.
-The final concatenated vectors are normalized too; when a modality is missing,
-its block remains zero and the available modality retains unit norm. The
-default config combines ViT-B/32 and CLAP. Re-extract older archives if they
-do not have the standardized schema.
+The final vector is normalized too, so a missing modality does not reduce the
+available embedding's norm.

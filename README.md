@@ -53,14 +53,17 @@ IDs are reported. Decode or model errors stop extraction with the video path
 in the error. Use `--device cpu` when CUDA is unavailable.
 
 Both extractors save `video_ids` and `embeddings` arrays, along with model
-metadata. `configs/xsubj.yaml` combines the train and test archives for each
-model into one video bank. CLIP and CLAP are normalized independently and
-concatenated with equal norm, and the final vector is normalized as well.
-They are not combined as raw unnormalized features. If a video has no audio,
-its CLAP block remains zero and the available visual vector is normalized
-without reducing its magnitude. Existing output archives are not overwritten;
-add `--overwrite` when regenerating an existing path, including an older
-archive with an incompatible schema.
+metadata. The current `configs/xsubj.yaml` uses the existing combined
+CLIP+CLAP archives `work\emb_train__clip-clap.npz` and
+`work\emb_test__clip-clap.npz`. These are legacy archives keyed by video/frame
+IDs; `src.xsubj` pools those frames and also accepts the newer
+`video_ids`/`embeddings` format. If you regenerate separate image and audio
+archives with the commands above, update `data.video_emb` in the config to
+list those four files. Separate model spaces are normalized independently and
+concatenated at equal norm, and the final vector is normalized as well. If a
+video is missing a modality, its available embedding retains unit norm.
+Existing output archives are not overwritten; add `--overwrite` when
+regenerating an existing path.
 
 ## 3. Validate retrieval accuracy
 
@@ -97,12 +100,14 @@ After choosing the model settings, train on the labeled training trials from
 all six subjects:
 
 ```powershell
-python -m src.xsubj.train --config configs/xsubj.yaml
+python -m src.xsubj.train --config configs/xsubj.yaml --out branchmerge_20261017
 ```
 
-The checkpoint is saved to
-`models\xsubj\checkpoints\all\model.pt`. Configuration overrides for an
-experiment can be passed to evaluation with `--set`, for example:
+This run saves to
+`models\xsubj\checkpoints\branchmerge_20261017\model.pt`. Without `--out`,
+the checkpoint is saved to `models\xsubj\checkpoints\all\model.pt`.
+Configuration overrides for an experiment can be passed to evaluation with
+`--set`, for example:
 
 ```powershell
 python -m src.xsubj.eval --models encoder --set model.arch=mlp train.xsubj_avg.prob=0
