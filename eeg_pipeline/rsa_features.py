@@ -186,16 +186,27 @@ def main(argv=None):
         encode = encode if model == 'lowlevel' else encode()
         n = N_FRAMES_LOW if model in ('lowlevel', 'videomae', 'vjepa2') else N_FRAMES_IMG
         load = read_audio if model == 'audio' else (lambda p: read_frames(p, n))
-        feats, t0 = {}, time.time()
-        for i, p in enumerate(paths):
-            for name, v in encode(load(p)).items():
+        # progress is saved every 25 videos; a rerun after an interruption continues there
+        partial = out_dir / f'_partial_{model}.npz'
+        feats, start = {}, 0
+        if partial.exists():
+            with np.load(partial) as z:              # closed again: Windows cannot delete open files
+                start = int(z['n_done'])
+                feats = {k: list(z[k]) for k in z.files if k != 'n_done'}
+            print(f'{model}: resuming after {start} videos', flush=True)
+        t0 = time.time()
+        for i in range(start, len(paths)):
+            for name, v in encode(load(paths[i])).items():
                 feats.setdefault(name, []).append(np.asarray(v, np.float32))
+            if (i + 1) % 25 == 0 or i + 1 == len(paths):
+                np.savez(partial, n_done=i + 1, **{k: np.stack(v) for k, v in feats.items()})
             if (i + 1) % 100 == 0 or i + 1 == len(paths):
                 print(f'{model}: {i + 1}/{len(paths)} videos, {time.time() - t0:.0f} s', flush=True)
         for name, rows in feats.items():
             np.savez(out_dir / f'{name}.npz', ids=ids, emb=np.stack(rows))
+        partial.unlink(missing_ok=True)
         print(f'{model}: saved {", ".join(sorted(feats))} '
-              f'({(time.time() - t0) / len(paths):.2f} s/video)', flush=True)
+              f'({(time.time() - t0) / max(1, len(paths) - start):.2f} s/video)', flush=True)
 
 
 if __name__ == '__main__':
