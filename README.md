@@ -30,12 +30,44 @@ pip install -r requirements.txt
 |---|---|
 | Load / explore data | `src/challenge_data.py` (validated loader for the challenge format) |
 | EEG preprocessing | `src/preprocess.py`, diagnostics via `src/snr_probe.py` |
+| EEG QC + automatic preprocessing | `eeg_pipeline/` — `python -m eeg_pipeline --data_dir data --out_dir prep`, see [`eeg_pipeline/README.md`](eeg_pipeline/README.md) |
 | Organizer baseline (repro) | `src/baseline_organizer.py` (`--sub 01..04` eval, `--sub 05/06` submission) |
 | Video embeddings (GPU) | `src/extract_embeddings.py` — model-agnostic, per-frame npz |
 | Embedding benchmark | `src/bench_embeddings.py` — scores ANY embedding npz on dev subjects |
 | EEG encoder + projection | `src/eeg_encoder.py` |
 | Contrastive training | `src/train_contrastive.py` |
 | Candidate-set evaluation | `src/eval_matching.py` |
+
+## EEG QC + preprocessing (`eeg_pipeline/`)
+
+One command runs quality control on all six subjects, chooses the
+preprocessing from fixed rules (one config shared by all subjects), applies
+it and writes a report explaining every decision (`prep/decisions.md`):
+
+```bash
+python -m eeg_pipeline --data_dir data --out_dir prep   # data/ holds trn/, tst/, tst_stim/
+```
+
+```python
+from eeg_pipeline import load_preprocessed
+
+d = load_preprocessed('prep', 1)
+d['X_train'], d['train_ids']   # (n_train, ch, time), video id per trial
+d['X_test']                    # (102, ch, time), ORIGINAL order -> submission rows
+d['test_labels']               # sub-01..04 only, for validation; None for 05/06
+```
+
+Test trials are never dropped or reordered, and test labels are never used
+for QC or preprocessing decisions. **Train and test are z-scored
+separately** because test trials are 0.60-0.70x the amplitude of training
+trials in every subject; normalizing test with training statistics would
+leave test data on a smaller scale than the model was trained on.
+Variants that QC cannot decide (detrend, average reference, 1 Hz high-pass,
+per-trial z-score, shorter window) are one `--set` flag away; compare them
+on the sub-01..04 average. Rules, variants, the QC plot report and tests:
+[`eeg_pipeline/README.md`](eeg_pipeline/README.md).
+
+`eeg_pipeline/` is generally universal and can be applied to any new data, given the data format is kept.
 
 ## Video-side strategy: which foundation model? (measured, not guessed)
 
@@ -117,4 +149,7 @@ Adapt `src/load_data.py` once organizers' template scripts arrive.
 | 2026-10-17 | EEG is pre-normalized (std≈0.5/ch, kurtosis≈3, no outlier trials, p99 ptp<3.1σ). No artifact rejection needed. |
 | 2026-10-17 | PSD: strong 30–50 Hz power = stimulus-locked gamma, NOT line noise. Bandpass/notch/avg-ref/Laplacian all REDUCE cross-subject video identifiability (d'). Raw wins. |
 | 2026-10-17 | Window tuning: 50–350 ms optimal (d'=0.129 vs 0.104 for organizer's 50–600 ms), consistent across all 9 subject pairs (3 repeats, incl. 04/05/06). |
+| 2026-10-17 | QC (`eeg_pipeline`): test trials are 0.60-0.70x the amplitude of training trials in every subject, evenly across frequencies -> z-score train and test separately. |
+| 2026-10-17 | The mean over trials was most likely subtracted upstream: train and test average responses anti-correlate (r = -0.71 to -0.92, all subjects). Average-response plots (ERP, reliability) are therefore not interpretable. |
+| 2026-10-17 | Trial offsets are as large as the within-trial signal -> per-trial demeaning. No bad channels, no line noise, almost no artefact trials (agrees with the pre-normalization finding above). |
 |---|---|
