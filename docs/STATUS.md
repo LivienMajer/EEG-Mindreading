@@ -63,6 +63,8 @@ tst 16.7% top-1) — Holdout-Iteration ist konservativ, echte Zahlen tendieren h
 | + Ridge gewichtet 4:1 | 10.29% | 32.35% |
 | **+ Ridge gewichtet 9:1** | **12.75%** | 33.09% |
 | + Ridge gewichtet 19:1 | 12.01% | 33.58% |
+| + 3 Transfers 9:1:1:1 (xsubj-Sonde) | 11.52% | 36.03% |
+| **+ Ridge + 3 Transfers 9:1:1:1:1 (GRAND)** | **13.24%** | **36.77%** |
 
 **Lektion 1 (Pitfall):** Rank-Fusion mit einem *deutlich schwächeren* Member im
 Equal-Weight zieht den Starken Richtung Rauschen — auf Holdout klappte die Fusion,
@@ -73,6 +75,26 @@ Subjects (sub-03: 5.9→9.8, sub-04: 7.8→12.8 bei 9:1) und kostet starke nur w
 (sub-01: 16.7→14.7 bei 9:1). Bei 102 Trials/Subject sind ±2–3 Treffer Rauschen —
 die Gewichte wurden per Dev-Subject-Auswahl gewählt und sind damit legitime
 Modell-Selection, aber mit Konfidenzintervall behaupten.
+
+### E-C Cross-Subject-Sonde (sub-01–04, clip, seed 0) — GO für Cross-Subject
+| Zelle-Typ | top-1 | top-5 |
+|---|---|---|
+| Diagonale (Modell Y → tst Y; sanity) | 11.03% | 33.09% |
+| **Off-Diagonale (Transfer; 12 Zellen)** | **3.68%** | **12.99%** |
+| → Vielfaches über Chance (0.98/4.9) | **3.7×** | **2.6×** |
+| Referenz: Per-Subject-Ridge tst | 3.43% | 13.73% |
+
+Interpretation: Transfer ≈ Ridge-Niveau — der *generalisierende* Anteil eines
+per-subject-trainierten Modells trägt bereits Ridge-Äquivalent über Subjects
+hinweg; der Leistungssprung 3.4→11.0 (Ridge→InfoNCE diagonal) kommt aus dem
+idiosynkratischen plus dem gemeinsam nutzbaren Anteil. Joint-Training (E-A)
+sollte beides gleichzeitig nutzen. Ausnahmezelle: Modell sub-04 → tst sub-03:
+7.84 (besser als diag 5.88!) → Subjekt-Ähnlichkeit ist strukturiert, nicht
+uniform — ein Hinweis auf Subjekt-Cluster, nutzbar für sub-05/06-Fusion.
+Grand-Fusion (9:1:1:1:1): **13.24% / 36.77%** — neuer tst-Bestwert; alle Subjects
+profitieren, die schwächsten am meisten (sub-03 5.88→10.78, +4.9 pp top-1).
+Checkpoints: `work/xsubj_probe/model_subXX_*.pt` — Wiederverwendung für
+sub-05/06-Transfer-Rankings ohne Retraining.
 
 ### Rank-Fusion (sub-01, Holdout, Split 0)
 | System | top-1 | top-5 |
