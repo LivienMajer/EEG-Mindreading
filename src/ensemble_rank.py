@@ -17,19 +17,22 @@ from pathlib import Path
 import numpy as np
 
 
-def fuse_mean_rank(rankings: list[np.ndarray]) -> np.ndarray:
-    """Fuse (n, k) ID-ranked lists -> single (n, k) ranking by mean rank."""
+def fuse_mean_rank(rankings: list[np.ndarray],
+                   weights: list[float] | None = None) -> np.ndarray:
+    """Fuse (n, k) ID-ranked lists -> single (n, k) ranking by (weighted) mean rank."""
     n, k = rankings[0].shape
     cand = sorted(set(int(v) for row in rankings[0] for v in row[:k]))
     pos = {v: j for j, v in enumerate(cand)}
     P = len(cand)
+    w = np.ones(len(rankings)) if weights is None else np.asarray(weights, float)
+    w = w / w.sum()
     avg = np.zeros((n, P))
-    for r in rankings:
+    for r, wi in zip(rankings, w):
         for i in range(n):
             rv = np.full(P, k, dtype=np.float64)
             for p, v in enumerate(r[i]):
                 rv[pos[int(v)]] = p
-            avg[i] += rv
+            avg[i] += wi * rv
     avg /= len(rankings)
     ens = np.empty_like(rankings[0])
     for i in range(n):
@@ -53,6 +56,9 @@ def main():
     p.add_argument("--subject", default="01", help="subject tag for score logging")
     p.add_argument("--experiment", default="rank-ensemble",
                    help="experiment tag for score logging")
+    p.add_argument("--weights", nargs="+", type=float, default=None,
+                   help="fusion weights per ranking file (default: equal). "
+                        "E.g. `--weights 3 1` down-weights the weak member.")
     args = p.parse_args()
 
     paths: list[str] = []
@@ -66,7 +72,7 @@ def main():
         t1, t5 = topk_acc(r, y)
         print(f"  {Path(f).name}: top1 {t1:.4f}  top5 {t5:.4f}")
 
-    ens = fuse_mean_rank(rankings)
+    ens = fuse_mean_rank(rankings, args.weights)
     t1, t5 = topk_acc(ens, y)
     print(f"\nFUSED (mean rank): top1 {t1:.4f}  top5 {t5:.4f}")
 

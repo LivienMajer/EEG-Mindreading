@@ -55,6 +55,25 @@ Pro Subject InfoNCE-tst: 16.7/37.3 · 13.7/32.4 · 5.9/34.3 · 7.8/28.4.
 Zusatz: Holdout-Proxy unterschätzt tst systematisch (sub-01: Holdout ~7% vs.
 tst 16.7% top-1) — Holdout-Iteration ist konservativ, echte Zahlen tendieren höher.
 
+### tst-Rank-Fusion: die „vergleichbare Mitglieder"-Lektion
+| Fusions-Kandidat (tst, mean sub-01–04) | top-1 | top-5 |
+|---|---|---|
+| InfoNCE solo (clip) | 11.03% | 33.09% |
+| + Ridge 1:1 (equal weight) | 7.35% | 28.43% |
+| + Ridge gewichtet 4:1 | 10.29% | 32.35% |
+| **+ Ridge gewichtet 9:1** | **12.75%** | 33.09% |
+| + Ridge gewichtet 19:1 | 12.01% | 33.58% |
+
+**Lektion 1 (Pitfall):** Rank-Fusion mit einem *deutlich schwächeren* Member im
+Equal-Weight zieht den Starken Richtung Rauschen — auf Holdout klappte die Fusion,
+weil beide Räume vergleichbar stark waren (6.5 vs 7.5).
+**Lektion 2:** Stark herabgewichtete Fusion (9:1–19:1, breites Plateau, kein
+Spikes-Overfit) bringt robust +1–2 pp top-1; Feinmuster: Ridge hilft schwachen
+Subjects (sub-03: 5.9→9.8, sub-04: 7.8→12.8 bei 9:1) und kostet starke nur wenig
+(sub-01: 16.7→14.7 bei 9:1). Bei 102 Trials/Subject sind ±2–3 Treffer Rauschen —
+die Gewichte wurden per Dev-Subject-Auswahl gewählt und sind damit legitime
+Modell-Selection, aber mit Konfidenzintervall behaupten.
+
 ### Rank-Fusion (sub-01, Holdout, Split 0)
 | System | top-1 | top-5 |
 |---|---|---|
