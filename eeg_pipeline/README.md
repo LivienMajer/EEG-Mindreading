@@ -78,6 +78,18 @@ trials, train-vs-test comparison. Note: the organizers most likely subtracted th
 mean over trials, so the average-response plots (ERP, reliability, latency, GFP) are
 not interpretable for this dataset.
 
+## Are the test trials averaged?
+
+```bash
+python -m eeg_pipeline.check_test_averaging --data_dir data
+```
+
+Compares test/train variance with the correlation between two subjects' responses to
+the same video. Correlation ignores scale, so a pure gain change leaves it unchanged,
+while averaging k repetitions removes noise and raises it by ~1/sqrt(R_a * R_b)
+(R = test/train variance ratio). Uses the sub-01..04 test labels only to pair trials
+of the same video.
+
 ## Findings on the challenge data (QC, 17 Oct)
 
 - Data are clean and already preprocessed (low-pass ~45 Hz, no line noise, almost no
@@ -85,8 +97,16 @@ not interpretable for this dataset.
 - The mean over trials was most likely subtracted upstream (train and test averages
   anti-correlate, r = -0.71 to -0.92 in all subjects).
 - Trial offsets are as large as the within-trial signal → per-trial demeaning.
-- Test trials are 0.60-0.70x the amplitude of training trials in every subject,
-  evenly across frequencies → train and test normalized separately.
+- Test trials are 0.60-0.70x the amplitude of training trials in every subject
+  → train and test normalized separately.
+- **Test trials behave like averages of ~2 repetitions** (`check_test_averaging`):
+  same-video correlation between subjects is 2.17x higher in test than in training
+  (95% CI 1.85-2.48; averaging predicts 2.00, a pure gain change 1.00). Power drops
+  less at low frequencies (delta ~0.5x) than at high ones (beta/gamma ~0.33x), as
+  expected when noise is averaged out and the stimulus response is kept. Same in all
+  6 subjects; implied k = 1.8-2.4. Strictly, this shows test trials carry about half
+  the noise of training trials; another noise-reduction step upstream would look the
+  same and cannot be excluded.
 
 ## Rules of the challenge this code respects
 

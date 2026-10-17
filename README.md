@@ -61,7 +61,10 @@ Test trials are never dropped or reordered, and test labels are never used
 for QC or preprocessing decisions. **Train and test are z-scored
 separately** because test trials are 0.60-0.70x the amplitude of training
 trials in every subject; normalizing test with training statistics would
-leave test data on a smaller scale than the model was trained on.
+leave test data on a smaller scale than the model was trained on. The test
+trials behave like averages of ~2 repetitions (about half the noise of a
+training trial), so validation on held-out *training* trials underestimates
+test scores.
 Variants that QC cannot decide (detrend, average reference, 1 Hz high-pass,
 per-trial z-score, shorter window) are one `--set` flag away; compare them
 on the sub-01..04 average. Rules, variants, the QC plot report and tests:
@@ -149,7 +152,8 @@ Adapt `src/load_data.py` once organizers' template scripts arrive.
 | 2026-10-17 | EEG is pre-normalized (std≈0.5/ch, kurtosis≈3, no outlier trials, p99 ptp<3.1σ). No artifact rejection needed. |
 | 2026-10-17 | PSD: strong 30–50 Hz power = stimulus-locked gamma, NOT line noise. Bandpass/notch/avg-ref/Laplacian all REDUCE cross-subject video identifiability (d'). Raw wins. |
 | 2026-10-17 | Window tuning: 50–350 ms optimal (d'=0.129 vs 0.104 for organizer's 50–600 ms), consistent across all 9 subject pairs (3 repeats, incl. 04/05/06). |
-| 2026-10-17 | QC (`eeg_pipeline`): test trials are 0.60-0.70x the amplitude of training trials in every subject, evenly across frequencies -> z-score train and test separately. |
+| 2026-10-17 | QC (`eeg_pipeline`): test trials are 0.60-0.70x the amplitude of training trials in every subject -> z-score train and test separately. |
 | 2026-10-17 | The mean over trials was most likely subtracted upstream: train and test average responses anti-correlate (r = -0.71 to -0.92, all subjects). Average-response plots (ERP, reliability) are therefore not interpretable. |
 | 2026-10-17 | Trial offsets are as large as the within-trial signal -> per-trial demeaning. No bad channels, no line noise, almost no artefact trials (agrees with the pre-normalization finding above). |
+| 2026-10-17 | **Test trials behave like averages of ~2 repetitions** (`python -m eeg_pipeline.check_test_averaging`): same-video correlation between subjects is 2.17x higher in test than in training (95% CI 1.85-2.48, 6 subject pairs; averaging predicts 2.00, a pure gain change 1.00). Power drops less at low than at high frequencies (delta ~0.5x vs beta/gamma ~0.33x), all 6 subjects, implied k = 1.8-2.4. Explains the 0.6-0.7x test amplitude and why holdout validation on single training trials underestimates tst scores (InfoNCE sub-01: ~7% holdout vs 16.7% tst). |
 |---|---|
