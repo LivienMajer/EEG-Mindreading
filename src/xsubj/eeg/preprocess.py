@@ -23,9 +23,13 @@ from src.xsubj.utils import config_hash, resolve
 
 
 def preprocess_subject(d: SubjectData, p: dict) -> SubjectData:
+    """All steps are switchable in the `preprocess` config section (defaults = submission setup)."""
     X, fs = d.X.astype(np.float64), d.fs
-    sos = signal.butter(4, [p["l_freq"], p["h_freq"]], btype="bandpass", fs=fs, output="sos")
-    X = signal.sosfiltfilt(sos, X, axis=-1)
+    lo, hi = p.get("l_freq"), p.get("h_freq")
+    if lo or hi:
+        btype, freqs = ("bandpass", [lo, hi]) if lo and hi else (("highpass", lo) if lo else ("lowpass", hi))
+        sos = signal.butter(p.get("filter_order", 4), freqs, btype=btype, fs=fs, output="sos")
+        X = signal.sosfiltfilt(sos, X, axis=-1)
     if p.get("notch") and p["notch"] < fs / 2:
         b, a = signal.iirnotch(p["notch"], Q=30, fs=fs)
         X = signal.filtfilt(b, a, X, axis=-1)
@@ -43,9 +47,17 @@ def preprocess_subject(d: SubjectData, p: dict) -> SubjectData:
         X = signal.resample_poly(X, frac.numerator, frac.denominator, axis=-1)
         fs = float(p["resample"])
 
+    if p.get("detrend"):                               # per trial and channel: linear trend
+        X = signal.detrend(X, axis=-1, type="linear")
+    elif p.get("demean_trials"):                       # per trial and channel: offset only
+        X = X - X.mean(axis=-1, keepdims=True)
     if p.get("remove_mean_response"):
         X = X - X.mean(axis=0, keepdims=True)          # stimulus-independent evoked response
-    X = X / X.std()                                    # one scale per subject+split (keeps topography)
+    scaling = p.get("scaling", "global")
+    if scaling == "global":
+        X = X / X.std()                                # one scale per subject+split (keeps topography)
+    elif scaling == "channel":
+        X = (X - X.mean(axis=(0, 2), keepdims=True)) / X.std(axis=(0, 2), keepdims=True)
     if p.get("clip_std"):
         X = np.clip(X, -p["clip_std"], p["clip_std"])
     if p["euclidean_alignment"]:
