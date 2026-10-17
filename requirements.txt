@@ -14,8 +14,12 @@ torchvision>=0.17
 # Video/image foundation models
 open_clip_torch>=2.24
 decord>=0.6            # fast video frame extraction
+<<<<<<< HEAD
 av>=12.0               # audio decoding from video files
 laion-clap             # audio embeddings
+=======
+opencv-python-headless>=4.8   # frame reading in src/xsubj/video (CLIP + low-level features)
+>>>>>>> c654b075e0b5a2515673b97e02dc660c5c590983
 
 # Visualization
 matplotlib>=3.8
@@ -24,6 +28,7 @@ seaborn>=0.13
 # Utilities
 tqdm>=4.66
 PyYAML>=6.0
+joblib>=1.3           # ridge weights (models/xsubj/checkpoints/*/*.joblib)
 kagglehub             # if data is hosted on kaggle
 
 # Notebook / dev
