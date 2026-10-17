@@ -40,6 +40,32 @@ semantisch-statistische statt pixelige Struktur). Zwei mögliche Payoffs:
   Pflicht (macht bench ohnehin), aber **Raum-Hypothese nicht aus rohem
   Cosine ableiten**.
 
+### E-T1 ersetzt: BOLD Moments Public Captions (2026-10-17)
+
+Statt einer VLM-API: Das Challenge-Datenset ist das **BOLD Moments Dataset**
+(OpenNeuro `on008257`), dessen `derivatives/stimuli_metadata/
+llm_frame_annotations.json` **fertige Captions für exakt unsere 1102 Videos**
+mitliefert (1000 trn + 102 tst, IDs deckungsgleich; GIT git-large-coco,
+Wang et al. 2022, 5 Captions/Video vom mittleren Frame). Public + pre-hackathon
+→ rulesafe, null API-Kosten. `src/convert_bold_captions.py` überführt das
+BOLD-Format in das `caption_videos.py`-Schema.
+
+- **Gate 0, Alignment (`src/check_caption_alignment.py`)**: Unsere CLIP-Image-
+  Embeddings retrieven die passende Caption: trn top-1 **56,7%**, top-5 85,8%
+  (1000 Kandidaten); tst top-1 **91,2%**, top-5 99,0% → ID-Zuordnung bewiesen.
+- **E-T2, Ridge-Bench (512-d CLIP-Text, mean-pooled)**: dev mean **3.19/12.25**
+  (sub-01..04: 3.92/3.92/2.94/1.96 top-1) — über Alexnet-Ridge (2.45/9.31),
+  nahe CLIP-Ridge (3.43/13.73). Gate ≥2% → **GO für E-T3**.
+- **E-T3a, Caption-`ridge` als 10. Member (`src/loo_captions.py`)**: LOO
+  wählt `w_cap=0` in 4/4 Folds — der Ridge-Member fällt durch
+  (held 22.55 ≈ 9-member-Referenz; Abweichung kommt aus w_joint=3 in Fold 02,
+  nicht vom Caption-Member). Erwartbar: Ridge ist der schwächste Member-Typ.
+- **Diversität des Raums**: Caption-Ridge top-1-Übereinstimmung mit clip-ridge
+  nur 3–9%, rescue ~0–1% — der Raum ist maximal divers zum CLIP-Bildraum,
+  nur die Solo-Stärke fehlt. Deshalb E-T3b: **InfoNCE auf dem Caption-Raum**
+  (beim Bild-CLIP war InfoNCE 3,2× stronger als Ridge: 11.03 vs 3.43;
+  skaliert auf Captions ≈ 8–10% solo). Läuft (4 dev Subjects, 200 Epochen).
+
 ## Ausführung
 
 ```powershell
