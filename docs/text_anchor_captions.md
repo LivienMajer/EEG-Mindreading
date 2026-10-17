@@ -71,15 +71,32 @@ BOLD-Format in das `caption_videos.py`-Schema.
   dem gehaltenen Subject (19.61 vs 20.61). Held-out 22.30/48.28 vs 9-member-
   Referenz 23.04/48.28 → **NO-GO. 9-Member-Fusion und Submissions bleiben
   unverändert.**
-- **E-T Gesamtfazit (Report/Presentation-Material)**: Der Text-Anker-Raum
-  ist nachweisbar valide (Gate 0: img→txt top-1 91.2% tst) und maximal divers
-  (3–9% top-1-Übereinstimmung mit allen Bild-Raum-Members), aber die
-  EEG→Text-Repräsentation ist zu schwach (4.9% solo vs 11.0% Bild-CLIP):
- vernunftgemäßes „EEG beschreibt *Was* das Subjekt sah" funktioniert
-  schlechter als „EEG codet *Wie* das Video aussieht". Diversity schlägt
-  Solo-Stärke nur bis zur Solo-Untergrenze ~Ridge-Niveau; darunter hilft
-  auch null Overlap nicht mehr. Sauber geloggte Negativkette E-T2→E-T3a→E-T3b
-  in `work/scores.csv` (experiment `loo-heldout-caption`).
+### E-T4-lin: CLIP-Blend als 10. Member (2026-10-17/18)
+
+Idee (Linealversion des E-T4-LoRA-Gedankens): Weil Image- und Caption-Embeddings
+aus **demselben** ViT-B/32 openai CLIP stammen (Image- vs. Text-Tower), ist
+`v = norm(norm(img) + α·norm(txt))` ein sauberer Blend im nativen Gemeinschaftsraum;
+α ist der „Drift-Regler", den ein LoRA-Loss nur indirekt steuert. Erwartungsmodell:
+α klein → Klon des Clip-Members (Agreement→1); α groß → Caption-Schwäche (4.9%).
+
+- **Blend α=0.35**, InfoNCE dev mean **10.78/33.82** (= Stock-Clip-Niveau,
+  sub-01: 16.67!, sub-03: 4.90) — Decodierbarkeit bleibt erhalten. ABER:
+  top-1-Agreement mit dem Clip-Member **0.57** → zu viel Fehler-Sharing →
+  LOO **NO-GO** (w_cap=0 in 3/4 Folds, held 12.06 vs 23.04... s. scores.csv,
+  experiment `loo-heldout-caption`).
+- **Blend α=1.0**, sub-01-Pilot: **10.78** solo, Agreement mit Clip nur
+  **0.36** — stärkste Dekorrelation bei erhaltenem Niveau. Dev-Komplettlauf
+  + letztes LOO-Gate läuft. LETZTER Versuch der Text-Familie: bei NO-GO
+  wird E-T4-lin abgeschlossen (4 Kandidaten ehrlich geloggt: caption-ridge,
+  caption-infonce, blend-035, blend-100).
+- METHODIK-NOTIZ: Die ursprüngliche „Rank-Corr 0.063"-Zahl stammt aus demselben
+  argsort-Bug wie der RRF-Scratch (indiziert Video-ID-Werte statt Ränge) und
+  ist ungültig — gültiges Diversitätsmaß in dieser Kette ist die top-1-Agreement.
+
+LOO-Ergebnis blend-035: held-out mean top-1 **0.2206** / top-5 0.4828 —
+unter der 9-Member-Referenz (0.2304), d. h. der Member schadet nicht
+substanziell, aber bringt auch nichts: Standard-Fallops eines hoch
+korrelierten Beinahe-Klons.
 
 ## Ausführung
 

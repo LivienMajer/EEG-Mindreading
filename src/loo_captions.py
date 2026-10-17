@@ -1,17 +1,15 @@
 """LOO test: does the BOLD caption-INFONCE member ADD to the 9-member megafusion?
 
-E-T3b gate for the text-anchor branch (docs/text_anchor_captions.md):
-caption space = frozen CLIP text tower over the public BOLD Moments
-GIT captions (llm_frame_annotations.json, see src.convert_bold_captions).
-E-T2 ridge bench passed (3.19/12.25); the caption-RIDGE member failed the
-LOO gate (w_cap=0 in 4/4 folds); caption-INFONCE solo is 4.90/20.59 dev
-mean -- 1.5x its ridge, below clip/alexnet but maximally diverse
-(3-9% top-1 agreement with the CLIP members).
+E-T4-lin result (docs/text_anchor_captions.md): blending CLIP image +
+BOLD caption text embeddings (same ViT-B/32, alpha=0.35) keeps clip-level
+decodability (dev mean 10.78/33.82 vs clip 11.03/33.09) while
+decorrelating from the clip member (top-1 agreement 0.57, rank corr
+0.063). This module tests that blend space as the 10th member.
 
 Protocol identical to src/loo_joint.py; the member list gains
-infonce_{s}_emb_train__captions_s0.npy (subject's own trn -> caption
+infonce_{s}_emb_train__capblend035_s0.npy (subject's own trn -> blend
 space, label-sorted dev rows) and the grid gains w_cap in {0, 0.5, 1, 2}.
-If held-out beats the 9-member LOO (23.04/48.28), the caption member
+If held-out beats the 9-member LOO (23.04/48.28), the blend member
 earns a slot; if w_cap=0 keeps winning, it does not (failure-analysis
 material for the report either way).
 
@@ -30,7 +28,7 @@ from .loo_generalization import SUBS, fuse, topk
 
 TST = "work/tst_ranked"
 E = "emb_train__clip-vitb32"
-CAP = "emb_train__captions"
+CAP = "emb_train__capblend035"
 DATA_ROOT = Path("provided_material/eeg-mind-reading-challenge/"
                  "eeg-mind-reading-challenge")
 
