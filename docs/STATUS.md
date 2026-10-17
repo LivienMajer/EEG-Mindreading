@@ -110,6 +110,9 @@ ist kein Tuning-Trick, sondern strukturell begründet.
 ## 7. Fallstricke-Register (aus echten Fehlern)
 
 - Submission-Zeilen: ORIGINAL tst.npy-Reihenfolge — `np.argsort(tst.y)` ist NUR Eval.
+  Automatischer Check: `python -m src.validate_submission <file> <data-dir> <sub>` — prüft
+  Format UND die Zeilenreihenfolge-Falle (bei Dev-Subjects kollabiert eine argsortierte
+  Datei auf Chance und wird FAILED; verifiziert mit sub-01 in beiden Varianten).
 - Teammate-CLIP via git: NIE `git show branch:file > out` (PowerShell zerstört
   Binärdaten); `git restore --source=<branch> -- <pfade>`.
 - Frame-Embeddings (alexnet-f3, 4.5 GB): nur via `load_pooled()` laden.
