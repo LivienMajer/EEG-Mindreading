@@ -23,6 +23,13 @@ subjects. Noise ceiling (Nili et al. 2014): lower bound = subject vs mean of the
 upper bound = subject vs mean of all. Significance: one-sided t-test over the six subjects,
 Benjamini-Hochberg FDR over time windows per model.
 
+Hierarchy test (AlexNet early layers conv1-3 vs deep layers conv5-fc7, curves averaged
+within each set): (1) crossover: per subject, deep minus early in the first wave (65-145 ms)
+and in the second wave (185-305 ms); paired t-test over subjects that the difference grows;
+(2) peak latency deep minus early, with the jackknife standard error for EEG latencies
+(Miller, Patterson & Ulrich 1998: leave-one-subject-out peaks, SE = sqrt((n-1)/n *
+sum((d_i - mean d)^2)), t with n-1 df).
+
 Also saved: Spearman correlation between every pair of model RDMs (how much two models
 agree; e.g. loudness vs visual models), and with --groups the same analysis restricted to
 four electrode groups (pp.CHANNELS; names from the organizers, order verified by
@@ -49,6 +56,9 @@ GROUPS = {
     'right_lateral': ['P8', 'P6', 'PO8', 'P4'],
     'midline_parietal': ['Pz', 'P1', 'P2', 'PO3', 'PO4'],
 }
+HIERARCHY = {'early': ['alexnet_conv1', 'alexnet_conv2', 'alexnet_conv3'],
+             'deep': ['alexnet_conv5', 'alexnet_fc6', 'alexnet_fc7']}
+EARLY_WIN, LATE_WIN = (0.065, 0.145), (0.185, 0.305)   # s, window centres: first and second wave
 SILENT_LOG_RMS = -4  # low_loudness is log10 RMS; digital silence is -5
 ORDER = ['low_luminance', 'low_contrast', 'low_saturation', 'low_edges', 'low_motion', 'low_loudness',
          'alexnet_conv1', 'alexnet_conv2', 'alexnet_conv3', 'alexnet_conv4', 'alexnet_conv5',
@@ -161,6 +171,37 @@ def score(Br, m, t):
     return r.mean(0), r.std(0, ddof=1) / np.sqrt(len(r)), sig, loo_peaks
 
 
+def hierarchy_test(Br, models, t):
+    """Crossover and jackknife peak-latency test, early vs deep AlexNet layers."""
+    if not all(m in models for m in sum(HIERARCHY.values(), [])):
+        return []
+    r = {k: np.mean([Br @ models[m] for m in v], 0) for k, v in HIERARCHY.items()}  # (n_subj, n_win)
+    d = r['deep'] - r['early']
+    w1 = (t >= EARLY_WIN[0] - 1e-9) & (t <= EARLY_WIN[1] + 1e-9)
+    w2 = (t >= LATE_WIN[0] - 1e-9) & (t <= LATE_WIN[1] + 1e-9)
+    first, second = d[:, w1].mean(1), d[:, w2].mean(1)
+    cross = stats.ttest_rel(second, first, alternative='greater')
+    n = len(d)
+    peaks = {k: np.array([t[np.argmax(np.delete(v, s, 0).mean(0))] for s in range(n)])
+             for k, v in r.items()}
+    lat = peaks['deep'] - peaks['early']
+    se = np.sqrt((n - 1) / n * np.sum((lat - lat.mean()) ** 2))
+    full = {k: t[np.argmax(v.mean(0))] for k, v in r.items()}
+    diff = full['deep'] - full['early']
+    t_lat = diff / se if se > 0 else np.inf
+    p_lat = stats.t.sf(t_lat, n - 1)
+    lines = [
+        f'crossover: deep - early = {first.mean():+.4f} in 65-145 ms, {second.mean():+.4f} in '
+        f'185-305 ms; increase in {np.sum(second > first)}/{n} subjects, paired t({n - 1}) = '
+        f'{cross.statistic:.2f}, p = {cross.pvalue:.4f} (one-sided)',
+        f'peak latency: early {full["early"] * 1000:.0f} ms, deep {full["deep"] * 1000:.0f} ms, '
+        f'difference {diff * 1000:.0f} ms, jackknife SE {se * 1000:.1f} ms, t({n - 1}) = '
+        f'{t_lat:.2f}, p = {p_lat:.2g} (one-sided); leave-one-out differences '
+        f'{sorted(set(np.round(lat * 1000).astype(int).tolist()))} ms',
+    ]
+    return lines
+
+
 def write_csv(path, header, rows):
     path.write_text('\n'.join([header] + rows) + '\n')
 
@@ -212,6 +253,10 @@ def main(argv=None):
     write_csv(out / f'rsa_model_overlap{tag}.csv', 'model,' + ','.join(names),
               [a + ',' + ','.join(f'{models[a] @ models[b]:.4f}' for b in names) for a in names])
 
+    hier = hierarchy_test(Br, models, t)
+    if hier:
+        (out / f'rsa_hierarchy_test{tag}.txt').write_text('\n'.join(hier) + '\n')
+
     k = int(np.argmax(lo))
     print(f'\nNoise ceiling: peak at {t[k] * 1000:.0f} ms, lower {lo[k]:.4f}, upper {up[k]:.4f}')
     print(f'{"model":20s} {"peak":>6s} {"peak range (LOSO)":>18s} {"r":>8s} {"% lower ceiling":>16s}  significant (FDR)')
@@ -219,6 +264,9 @@ def main(argv=None):
         name, pk, a, b, r, frac, span = line.split(',')
         print(f'{name:20s} {pk:>4s}ms {a:>8s}-{b:>4s} ms {float(r):8.4f} {float(frac) * 100:15.0f}%  '
               f'{span + " ms" if span else "none"}')
+
+    if hier:
+        print('\nHierarchy test (AlexNet conv1-3 vs conv5-fc7):\n  ' + '\n  '.join(hier))
 
     if args.groups:
         print('\nPer electrode group: peak r (peak time), * = significant at the peak (FDR)')

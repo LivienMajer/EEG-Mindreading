@@ -139,7 +139,8 @@ python -m eeg_pipeline.rsa --data_dir data --features work/rsa_features work/cli
 `data` holds `trn/` and `stimuli_train/`, `stimuli_test/`. Outputs in `results/rsa/`:
 `rsa_timecourses.png` (figure), `rsa_timecourses.csv` (r per model and window, plus
 noise ceiling), `rsa_summary.csv` (peak time, peak r, % of ceiling, significant span),
-`rsa_model_overlap.csv` (how much the models agree with each other), `rsa_groups.csv`
+`rsa_model_overlap.csv` (how much the models agree with each other),
+`rsa_hierarchy_test.txt` (early vs deep layers), `rsa_groups.csv`
 (per electrode group), and the same with suffix `_with_sound` for the robustness run.
 Verified with Python 3.11.17, numpy 2.4.6, scipy 1.17.1, torch 2.14.1 (CPU),
 torchvision 0.29.1, transformers 5.20.1, av 18.1.0, decord 0.6.0, mne 1.13.2.
@@ -151,7 +152,10 @@ torchvision 0.29.1, transformers 5.20.1, av 18.1.0, decord 0.6.0, mne 1.13.2.
   of the ceiling) and fade; conv4-fc7 peak at 225 ms (fc6 r 0.036, 122%) and stay
   ahead to 800 ms. Peaks are stable when any one subject is left out (conv1-3: 105 ms
   in every fold; fc6/fc7: 225-265 ms). Same order as in the network: simple structure
-  first, abstract content later.
+  first, abstract content later. Tested (`results/rsa/rsa_hierarchy_test.txt`, conv1-3
+  vs conv5-fc7): early layers win the first wave and deep layers the second in 6/6
+  subjects (paired t(5) = 5.60, p = 0.001); deep layers peak 120 ms later (105 vs 225
+  ms, jackknife t(5) = 5.69, p = 0.001; leave-one-subject-out 120-140 ms).
 - **Hierarchy in space:** early layers are strongest over the occipital pole (conv2 r
   0.038 at 85 ms vs 0.018 at the lateral groups); deep layers move to the lateral
   parieto-occipital electrodes at ~205 ms (fc6 0.024-0.027), over lateral
