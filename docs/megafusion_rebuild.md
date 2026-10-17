@@ -173,8 +173,39 @@ decode better the more typical they are). For the rules, the encoder weights in
 `models/xsubj/checkpoints/{fc6,vmae8}_*` (git-ignored here) must be committed if this
 submission is used.
 
-Caveats: single seed everywhere; fc6 and VideoMAE-l8 were picked by the RSA, but their
-solo scores were seen on the same dev test sets, so the LOO protects the weights, not
-the choice of members. For sub-05/06: `make_submission.py` + the two new members (dumps
+## 5. Clean check of the member choice (no test data)
+
+fc6 / VideoMAE-l8 were motivated by the RSA (training data) but their decoding was first
+seen on the dev test sets. Check without any tst recording or label:
+`contrastive_pipeline --holdout 102` hides 102 training videos per subject and ranks
+their trials among them; same hidden videos for every target (split set by --seed).
+
+```bash
+python -m src.extract_pooled --convert work/rsa_features/alexnet_fc6.npz --name alexnet-fc6 --out-dir work
+python -m src.extract_pooled --convert work/rsa_features/videomae_l8.npz --name videomae-l8 --out-dir work
+for t in clip-vitb32 alexnet-fc6 videomae-l8; do for s in 01 02 03 04 05 06; do for k in 0 1 2; do
+  python -m src.contrastive_pipeline --data-dir $D --sub $s --emb-train work/emb_train__$t.npz       --emb-test work/emb_test__$t.npz --holdout 102 --seed $k; done; done; done
+python -m src.holdout_compare --targets clip-vitb32 alexnet-fc6 videomae-l8
+```
+
+6 subjects (incl. sub-05/06) x 3 seeds = 1836 hidden trials:
+
+| target | top-1 | top-5 | mean rank |
+|---|---|---|---|
+| CLIP | 4.7 | 18.8 | 29.4 |
+| AlexNet fc6 | 6.2 | 22.5 | 25.2 |
+| VideoMAE-l8 | 6.9 | 22.8 | 24.7 |
+
+Paired vs CLIP: fc6 top-1 +94/-67 (p = 0.04), top-5 +244/-177 (p = 0.001), rank
+p = 2e-11; VideoMAE-l8 top-1 +104/-63 (p = 0.002), top-5 +252/-180 (p = 0.0006), rank
+p = 2e-13. Lower mean rank than CLIP in 6/6 subjects for both, including sub-05/06,
+over 3 seeds. So the member choice holds on data the dev scores never saw. Absolute
+values are lower than on tst because training trials are single presentations while
+test trials behave like averages of ~2 (eeg_pipeline/README.md).
+
+Caveats: single seed for the fusion members; fc6 and VideoMAE-l8 were picked by the RSA
+and their solo scores were first seen on the same dev test sets (the LOO protects the
+weights, not the choice of members); section 5 checks that choice without test data.
+The original members' weights (9:9:5:2) were chosen on all four dev subjects. For sub-05/06: `make_submission.py` + the two new members (dumps
 `work/prep_variants/A_fc6_XX_s0.npy`, `A_vmae8_XX_s0.npy`, original tst order) and the
 E-D dumps from checkpoint 5e3154e.
