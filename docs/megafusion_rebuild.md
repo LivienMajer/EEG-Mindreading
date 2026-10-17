@@ -34,7 +34,7 @@ python -m src.loo_generalization
 | 2 InfoNCE alexnet-f3 | 8.8/35.3, 10.8/35.3, 8.8/21.6, 6.9/27.5 | identical |
 | 3 E-D (checkpoint 86fac43) | 7.35 / 23.53 | 7.35 / 23.28 (one trial) |
 | 4 ridge | 3.43 / 13.73 | identical |
-| 5-7 transfers (12 cells) | 3.68 / 12.99, best cell 7.84 | 3.68 / 12.99-ish, best cell 7.84 |
+| 5-7 transfers (12 cells) | 3.68 / 12.99, best cell 7.84 | identical (3.68 / 12.99, best cell 7.84) |
 | **LOO megafusion** | **22.30 / 48.28**, weights 9:9:5:2 in all folds | **identical** |
 
 Findings on the way:
