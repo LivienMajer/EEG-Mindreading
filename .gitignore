@@ -70,3 +70,4 @@ models/xsubj/checkpoints/*
 models/xsubj/features/*
 !models/xsubj/features/clip_vitb32.npz
 !submissions/sub-0[56]_ranked_candidate_list.npy
+work/paper_*

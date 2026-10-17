@@ -36,8 +36,13 @@ class LinearProjection:
 # ---------------------------------------------------------------------------
 
 def build_eegnet(n_channels: int, n_times: int, embed_dim: int = 512,
-                 dropout: float = 0.5):
-    """Small EEGNet-style CNN + projection head to the embedding space."""
+                 dropout: float = 0.5, k1: int = 64, k2: int = 32):
+    """Small EEGNet-style CNN + projection head to the embedding space.
+
+    k1/k2: temporal kernel sizes (samples @100 Hz). Defaults 64/32 fit
+    ~300-sample windows; for the short 50-350 ms window (30 samples) use
+    k1=16, k2=8.
+    """
     import torch
     import torch.nn as nn
 
@@ -45,14 +50,14 @@ def build_eegnet(n_channels: int, n_times: int, embed_dim: int = 512,
         def __init__(self):
             super().__init__()
             self.firstconv = nn.Sequential(
-                nn.Conv2d(1, 8, (1, 64), padding=(0, 32), bias=False),
+                nn.Conv2d(1, 8, (1, k1), padding=(0, k1 // 2), bias=False),
                 nn.BatchNorm2d(8))
             self.depthwise = nn.Sequential(
                 nn.Conv2d(8, 16, (n_channels, 1), groups=8, bias=False),
                 nn.BatchNorm2d(16), nn.ELU(), nn.Dropout(dropout))
             self.sepconv = nn.Sequential(
-                nn.ZeroPad2d((15, 16, 0, 1)),
-                nn.Conv2d(16, 16, (1, 32), bias=False),
+                nn.ZeroPad2d((k2 // 2 - 1, k2 // 2, 0, 1)),
+                nn.Conv2d(16, 16, (1, k2), bias=False),
                 nn.BatchNorm2d(16), nn.ELU(), nn.Dropout(dropout))
             self.head = nn.Sequential(
                 nn.Flatten(),
