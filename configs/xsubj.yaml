@@ -26,10 +26,10 @@ data:
     seed: 0
 
 preprocess:
-  l_freq: 0.5
-  h_freq: 40.0
+  l_freq: null                 # no high-pass: sweep_preprocess, low-pass only + no average reference
+  h_freq: 40.0                 #   (ridge votes: mean rank 15.0 -> 12.5, CV rank 0.263 -> 0.233)
   notch: null                  # challenge data is already low-passed (no power above 45 Hz)
-  average_reference: true
+  average_reference: false
   baseline: true               # subtract mean of the pre-stimulus window (t < 0) if present
   tmin: 0.0                    # analysis window relative to video onset (s)
   tmax: 1.0                    # stimulus information is concentrated in the first second
@@ -93,5 +93,7 @@ submit:                        # default submission: 3 equal votes = mean of the
   #               python -m src.xsubj.train --set seed=N --out shallow_sN                  (N = 1..4)
   #               python -m src.xsubj.train --set seed=N model.arch=mlp model.input_dropout=0.2 --out mlp_sN  (N = 0..2)
   #               python -m src.xsubj.train --set seed=0 model.arch=eegnet --out eegnet_s0
-  # dev (sub-01..04, per-candidate normalisation): top-1 13.2%, top-5 43.1%, mean rank 14.2
+  # dev (sub-01..04, per-candidate normalisation): top-1 17.6%, top-5 47.8%, mean rank 11.5
+  #   (before, with 0.5-40 Hz band-pass + average reference: 13.2% / 43.1% / 14.2;
+  #    paired: rank better in 214 vs 141 recordings, p = 0.0001; top-1 47 vs 29 hits, p = 0.05)
   encoders: [all, shallow_s1, shallow_s2, shallow_s3, shallow_s4, mlp_s0, mlp_s1, mlp_s2, eegnet_s0]

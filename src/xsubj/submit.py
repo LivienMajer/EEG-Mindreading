@@ -10,8 +10,8 @@ normalisation:
   1. the mean of the encoders listed under `submit.encoders` (5x ShallowConvNet, 3x MLP, 1x EEGNet)
   2. pooled ridge, trained on the trn splits of all six subjects
   3. per-subject ridge, trained on the subject's own trn split only
-Dev (sub-01..04): top-1 13.2%, top-5 43.1%, mean rank 14.2 (votes 1+2 only: 10.8% / 36.3% / 16.2;
-pooled ridge alone 9.8% / 33.1% / 18.9).
+Dev (sub-01..04): top-1 17.6%, top-5 47.8%, mean rank 11.5 with low-pass-only preprocessing and no
+average reference (13.2% / 43.1% / 14.2 with the earlier 0.5-40 Hz band-pass + average reference).
 
     python -m src.xsubj.submit                             # ensemble, sub-01..06
     python -m src.xsubj.submit --model ridge               # pooled ridge only (fits on all trn splits)

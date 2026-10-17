@@ -12,7 +12,8 @@ EEG ──► preprocessing ──► EEG encoder (trained, this section) ─►
 
 | | Top-1 | Top-5 | Mean rank |
 |---|---|---|---|
-| **Submission: 3-vote ensemble** | **13.2 %** | **43.1 %** | **14.2** |
+| **Submission: 3-vote ensemble** | **17.6 %** | **47.8 %** | **11.5** |
+| Same ensemble with the earlier preprocessing (band-pass + average reference) | 13.2 % | 43.1 % | 14.2 |
 | Organisers' baseline (AlexNet forward model, sub-01 only) | 3.9 % | 11.8 % | – |
 | Chance | 1.0 % | 4.9 % | 51.5 |
 
@@ -120,7 +121,34 @@ A model that sees six times less data, but only from the right person, decodes b
 
 **Per-subject fine-tuning of the encoders** (all parameters, lr 1e-4, early stopping on the subject's held-out training videos) changes little: alone, mean rank improves slightly (ShallowConvNet 23.9 → 23.3, MLP 20.7 → 20.2), but inside the 3-vote ensemble (encoder vote from these two encoders) there is no measurable gain (top-1 12.0 → 12.3 %, top-5 42.4 → 42.2 %, mean rank 14.5 → 14.5, p = 0.17). The subject-specific part is already covered by the per-subject ridge, so the submission keeps the pooled encoders.
 
-## 5. Final configuration
+## 5. Preprocessing
+
+Sections 1–4 used a conventional pipeline: 0.5–40 Hz band-pass, average reference, then split-wise mean removal, scaling and Euclidean alignment. A sweep over these steps (`python -m src.xsubj.sweep_preprocess`) scores each variant with the two ridge votes, which train in seconds. The main criterion is 5-fold cross-validation over training videos (normalised mean rank, 0 = best, 0.5 = chance), so the choice does not rest on the development test sets. Those are reported for confirmation only.
+
+| Preprocessing (ridge votes) | CV rank | Top-1 | Top-5 | Mean rank |
+|---|---|---|---|---|
+| Band-pass 0.5–40 Hz + average reference (earlier) | 0.263 | 13.7 % | 40.9 % | 15.0 |
+| Band-pass 0.1–40 Hz | 0.287 | 11.8 % | 36.8 % | 15.9 |
+| Band-pass 1–40 Hz | 0.262 | 13.5 % | 39.2 % | 16.0 |
+| High-pass 0.1 Hz only | 0.283 | 12.0 % | 38.2 % | 15.5 |
+| No filter | 0.241 | 14.7 % | 45.3 % | 13.7 |
+| Low-pass 40 Hz only | 0.241 | 14.7 % | 45.8 % | 13.6 |
+| **Low-pass 40 Hz only, no average reference (chosen)** | **0.233** | **15.9 %** | **45.6 %** | **12.5** |
+| … and no Euclidean alignment | 0.269 | 12.0 % | 38.5 % | 14.9 |
+| … with per-trial detrending | 0.235 | 15.4 % | 42.6 % | 14.4 |
+| … with per-trial demeaning | 0.238 | 14.5 % | 45.3 % | 14.1 |
+
+**Finding:** every high-pass filter hurts compared with none. The effect is not monotonic in the cut-off: 0.1 Hz is worse than 0.5–1 Hz, which suggests filter edge transients on the short 3 s epochs, rather than a pure loss of slow signal (not tested further). Average referencing also hurts, while Euclidean alignment remains clearly useful. The chosen variant is best on both the cross-validation and the development test sets.
+
+All nine encoders were then retrained with the chosen preprocessing (same architectures, seeds and training settings). Against the same ensemble with the earlier preprocessing, paired on the same 408 recordings:
+
+| Full ensemble | Top-1 | Top-5 | Mean rank |
+|---|---|---|---|
+| Earlier preprocessing | 13.2 % | 43.1 % | 14.2 |
+| **Low-pass only, no average reference** | **17.6 %** | **47.8 %** | **11.5** |
+| Paired test | 47 vs 29 hits, p = 0.050 | 58 vs 39 hits, p = 0.067 | better in 214, worse in 141, p = 0.0001 |
+
+## 6. Final configuration
 
 The submission combines three votes with equal weight, then applies per-candidate normalisation:
 
@@ -130,10 +158,10 @@ The submission combines three votes with equal weight, then applies per-candidat
 
 | Development test | sub-01 | sub-02 | sub-03 | sub-04 | Mean |
 |---|---|---|---|---|---|
-| Top-1 | 9.8 % | 18.6 % | 10.8 % | 13.7 % | **13.2 %** |
-| Top-5 | 38.2 % | 52.9 % | 36.3 % | 45.1 % | **43.1 %** |
+| Top-1 | 18.6 % | 21.6 % | 12.7 % | 17.6 % | **17.6 %** |
+| Top-5 | 47.1 % | 49.0 % | 44.1 % | 51.0 % | **47.8 %** |
 
-Against the previous submission (ridge + 9 encoders), top-5 and mean rank improve significantly in paired tests.
+Preprocessing: 40 Hz low-pass (no high-pass), no average reference, 0–1 s window, 100 Hz, removal of each split's mean response, scaling, clipping at ±6 SD, Euclidean alignment (all label-free, per subject and split). Against the earlier ridge + 9 encoders submission, adding the per-subject ridge improved top-5 and mean rank significantly; the preprocessing change then improved the mean rank significantly again (section 5).
 
 Reproduction (from the repository root; the weights of all models and the CLIP features are versioned):
 
@@ -141,6 +169,7 @@ Reproduction (from the repository root; the weights of all models and the CLIP f
 python -m src.xsubj.submit                    # submission files for sub-01..06, scores sub-01..04
 python -m src.xsubj.eval --models ridge       # pooled ridge, official protocol
 python -m src.xsubj.sweep_features            # feature sweep (add --tmax 3.0 --curve for the decoding curve)
+python -m src.xsubj.sweep_preprocess          # preprocessing sweep (section 5)
 ```
 
 The training commands for each encoder are listed under `submit:` in `configs/xsubj.yaml`.
@@ -148,7 +177,8 @@ The training commands for each encoder are listed under `submit:` in `configs/xs
 ## Limitations and failure cases
 
 - **Small development set.** 408 scored recordings give about ±1.3 points of noise on top-1. Several reported differences (normalisation, ensemble size) are trends rather than proven effects; only the paired tests marked significant should be read as such.
-- **Subjects differ a lot.** Top-1 ranges from 9.8 % (sub-01) to 18.6 % (sub-02) in the final model. Sub-03 is the hardest subject in most variants.
+- **Subjects differ a lot.** Top-1 ranges from 12.7 % (sub-03) to 21.6 % (sub-02) in the final model. Sub-03 is the hardest subject in most variants.
+- **Sections 1–4 use the earlier preprocessing.** The feature, encoder and ensemble comparisons were not rerun after the preprocessing change; their absolute numbers are lower than the final ones, and only the relative conclusions carry over.
 - **Training and test recordings differ.** Training trials are single presentations, test recordings appear to be averages. The models are trained on noisier data than they are scored on, and the cross-validated weight between pooled and per-subject ridge is chosen on single trials.
 - **Only the onset response is decoded.** Nothing after about 1.1 s carries information, so any content that only appears later in a 3 s video is invisible to these models.
 - **Validation leak in fine-tuning.** The early-stopping set of the per-subject fine-tuning contains videos the pooled encoder was trained on, so its validation scores (0.86–0.93) are optimistic. This only affects when training stops, not the development test numbers.
@@ -158,4 +188,5 @@ The training commands for each encoder are listed under `submit:` in `configs/xs
 1. The EEG signal that identifies a video is the **phase-locked evoked response from about 50 to 600 ms after onset**, peaking at 150–300 ms. Oscillatory power and spatial covariance carry nothing usable.
 2. At this data size, a **linear model beats deep networks**; the networks only help as additional, differently-erring ensemble members.
 3. **Subject-specific models matter more than more data**: per-subject ridge on ~950 trials beats pooled ridge on 5,650, and combining both is best.
-4. **Careful statistics are part of the method**: with 102 candidates and 408 recordings, paired tests and cross-validated choices separate real gains from noise.
+4. **Less preprocessing is better**: a high-pass filter and average referencing remove stimulus information; only a 40 Hz low-pass, label-free per-split normalisation and Euclidean alignment help.
+5. **Careful statistics are part of the method**: with 102 candidates and 408 recordings, paired tests and cross-validated choices separate real gains from noise.
