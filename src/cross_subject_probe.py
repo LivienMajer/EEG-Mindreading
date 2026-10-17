@@ -74,7 +74,8 @@ def main():
 
     E_tst, y_tst = {}, {}
     for ts in args.test_subs:
-        tst = load_test_subject(root, ts)
+        # with_labels gate: 05/06 tst_stim files are teammates' pseudo-labels
+        tst = load_test_subject(root, ts, with_labels=ts in DEV_SUBJECTS)
         E_tst[ts] = eeg_window(tst.X)
         y_tst[ts] = tst.y
 

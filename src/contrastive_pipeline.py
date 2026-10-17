@@ -278,7 +278,12 @@ def main():
                   top1=t1, top5=t5, note="")
         return
 
-    tst = load_test_subject(root, args.sub)
+    # with_labels gated to dev subjects: sub-05/06 tst_stim files are
+    # teammates' pseudo-labels (created 2026-10-17 during the hackathon) --
+    # NEVER consume them: fake scores + label-sorted (row-order-corrupted)
+    # 05/06 ranking dumps would silently poison the submission.
+    tst = load_test_subject(root, args.sub,
+                            with_labels=args.sub in DEV_SUBJECTS)
     E_tst = eeg_window(tst.X)
     ranked = rank_candidates(model, E_tst, X_cand)
 

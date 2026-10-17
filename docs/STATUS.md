@@ -128,16 +128,51 @@ FINALE SUBMISSION-GEWICHTE: 9:9:5:2:1:1:1. LOO pro Subject: 23.5/53.9,
 25.5/50.0, 19.6/42.2, 20.6/47.1 — Subjekt-Aehnlichkeit macht ±3pp aus; fuer
 sub-05/06 also 17-25% top-1 zu erwarten (ehrliche Spanne).
 
+### E-A: Joint-InfoNCE über alle 6 Subjecte — MESSTECHNISCHES GO, SOLO NEIN
+Frage (Vereinfachungs-These): ersetzt EIN joint-Modell die 8-Member-Fusion?
+Setup (`src/joint_infonce.py`): InfoNCE auf gepooltem trn aller 6 Subjecte
+(5.650 Trials, 6× Daten), EEGNet + gelerntes Subject-Token am 256-d-Hidden,
+100 Epochs, dann 30-Epoch-Finetune auf eigenem trn (lr 1e-4). t-Daten nie
+angefasst. Dev-Mean (sub-01–04, tst):
+| System | top-1 | top-5 |
+|---|---|---|
+| solo clip (Referenz) | 11.03% | 33.09% |
+| joint-only (alle 6 trn, Subject-Token) | 10.05% | 30.88% |
+| joint + 30ep Finetune | 11.27% | 33.58% |
+**Antwort: NEIN.** Joint+Finetune ≈ solo (11.3 vs 11.0 — Seed-Rauschen);
+die Fusion (22.3) bleibt 2× ueber dem joint-Modell. 6× Daten + Subject-Token
+bringen einen genau auf Solo-Niveau — der Fusions-Gewinn kommt aus
+**Diversitaet, nicht aus Data-Pooling**. (Wichtiges praesentierbares
+Negative-Resultat; batch top-1 beim Joint-Training stieg bis 0.19 und war
+bei Ep. 100 noch nicht gesaettigt — laengeres Training waere theoretisch
+mild positiv, tested sich nicht.) ABER: als 9. FUSIONS-MEMBER verdient das
+jointft-Modell seinen Platz (nächster Block).
+
+### E-A als 9. Member: LOO-Joint — GEWICHTE 9:9:5:2:1:1:1:2
+`src/loo_joint.py` (identisches LOO-Protokoll wie E-D-Block, Grid nur um
+w_joint {0, 0.5, 1, 2} erweitert): **JEDER Fold waehlt unabhaengig
+w_joint=2 (nie 0)** — das Member-addet konsistent Signal:
+| Fusion | top-1 (held-out mean) | top-5 |
+|---|---|---|
+| 8-Member (9:9:5:2:1:1:1) | 22.30% | 48.28% |
+| **9-Member (+jointft, w=2)** | **23.04%** | 48.28% |
+Klein (+0.7pp ≈ 3 Trestreffer/408 — innerhalb Plateau-Rauschen), aber die
+4/4-Fold-Stabilitaet der Auswahl ist das eigentliche Signal. Per Fold:
+23.5/54.9, 26.5/51.0, 20.6/42.2, 21.6/45.1.
+
 ### SUBMISSIONS ERSTELLT (2026-10-17)
-`src/make_submission.py` baut sub-05/06 aus 8 Mitgliedern (Gewichte
-9:9:5:2:1:1:1:1 — das 4. Transfer bekommt Bandbreiten-Gewicht 1 wie in der
+`src/make_submission.py` baut sub-05/06 aus **9 Mitgliedern** (Gewichte
+9:9:5:2:1:1:1:1:2 — 8-Member-LOO plus jointft w=2 aus `src/loo_joint.py`;
+das 4. Transfer bekommt Bandbreiten-Gewicht 1 wie in der
 LOO-Logik): eigener clip-InfoNCE, eigener alexnet-InfoNCE (beide auf eigenem
 trn, trainiert in der ehemals laufenden Kette), E-D-Teammate-Encoder
 (original order dumps), own ridge (bench-exakt repliziert, original order),
 4 Transfer-Rankings aus den geladenen Dev-Checkpoints (Original-order, durch
-`rank_candidates` input-order, kein argsort). Output:
+`rank_candidates` input-order, kein argsort), jointft (E-A joint+finetune,
+original order). Output:
 `submissions/sub-{05,06}_ranked_candidate_list.npy`, (102,102) int64,
-Original-tst.npy-Reihenfolge.
+Original-tst.npy-Reihenfolge. 8-Member-Fallback:
+`submissions_backup_8member/`.
 Validierung: (1) `validate_submission.py` ALL OK (Format), (2) Bit-Exaktheit
 der Checkpoint-Maschinerie vs Probe-Dumps (tr01->te03 identisch),
 (3) Bit-Exaktheit ridge vs bench (sub-01), (4) re-fusion aus Member-Dumps
@@ -200,6 +235,19 @@ ist kein Tuning-Trick, sondern strukturell begründet.
 
 ## 7. Fallstricke-Register (aus echten Fehlern)
 
+- **PSEUDO tst_stim FALLE (2026-10-17):** Teammates haben fuer sub-05/06
+  `tst_stim/sub-0X_tst_stim.npy` erzeugt (Timestamps 15:34/15:35, echte
+  01–04 sind vom 11.10). Das sind KEINE echten Labels (haelt der Veranstalter
+  zurueck; unsere Modelle scoringen dort Chance ~1–2 %). GEFahr: Loader mit
+  `with_labels=None` greifen sie automatisch ab → Fake-Scores + label-argsortierte
+  (= zeilen-permutierte = KORRUPTE) 05/06-Ranking-Dumps → poisoned Submission.
+  SCHUTZ: alle unsere `load_test_subject`-Calls sind jetzt auf Dev-Subjecte
+  gegated (`with_labels=sub in DEV`); joint/jointft-05/06-Dumps via
+  `work/redump_joint0506.py` aus dem Checkpoint in Original-Order
+  wiederhergestellt; `validate_submission` meldet fuer 05/06 korrekt "no
+  labels". Teammate-Dateien selbst NICHT geloescht (koennen deren Pipeline-
+  Tests dienen) — aber NIE als Wahrheit konsumieren, auch nicht fuer
+  Modell-Selektion (Regel: Selektion NUR auf sub-01–04 tst).
 - Submission-Zeilen: ORIGINAL tst.npy-Reihenfolge — `np.argsort(tst.y)` ist NUR Eval.
   Automatischer Check: `python -m src.validate_submission <file> <data-dir> <sub>` — prüft
   Format UND die Zeilenreihenfolge-Falle (bei Dev-Subjects kollabiert eine argsortierte

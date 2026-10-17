@@ -43,8 +43,10 @@ def check(path: Path, data_dir: Path, sub: str) -> bool:
         ok = False
     print(f"format checks: {'OK' if ok else 'FAILED'}")
 
-    # Row-order sanity via labels (dev subjects only)
-    tst = load_test_subject(data_dir, sub)
+    # Row-order sanity via labels (REAL dev labels only: sub-05/06 tst_stim
+    # files in this repo are teammates' pseudo-labels)
+    tst = load_test_subject(data_dir, sub,
+                            with_labels=sub in ("01", "02", "03", "04"))
     if tst.y is not None:
         t1 = float((a[:, 0] == tst.y).mean())
         t5 = float((a[:, :5] == tst.y[:, None]).any(1).mean())

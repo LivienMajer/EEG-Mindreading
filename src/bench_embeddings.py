@@ -207,7 +207,9 @@ def main():
         bundle = fit_forward(X_trn, E_full)
         pred_cand = predict_eeg(bundle, X_cand)  # (102, 17, t_win)
 
-        tst = load_test_subject(root, sub)
+        # with_labels gate: 05/06 tst_stim files are teammates' pseudo-labels
+        tst = load_test_subject(root, sub,
+                                with_labels=sub in ("01", "02", "03", "04"))
         E_tst = decimate(tst.X, 5, axis=-1, ftype="fir", zero_phase=True)
         E_tst_win = E_tst[:, :, t_win[0]:t_win[1]]  # same window as training
 

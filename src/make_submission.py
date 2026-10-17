@@ -7,9 +7,14 @@ tst is only ever ranked, never trained on):
   3. E-D teammate encoder  w=5  -- frozen ckpt, joint-trained on all 6 subjects' trn
   4. own ridge (clip)      w=2  -- ridge video-features->EEG on the subject's trn
   5-8. transfers: the FOUR dev-subject InfoNCE models, w=1 each
+  9. jointft (clip)        w=2  -- E-A joint InfoNCE over all 6 subjects' trn
+                                  (subject token) + 30-epoch finetune on the
+                                  own trn (src/joint_infonce.py)
 
-Fusion weights 9:9:5:2:1:1:1:1. Dev LOO selected 9:9:5:2:1:1:1 (3 transfers,
-LOO held-out 22.30/48.28); the 4th transfer gets the same unit weight.
+Fusion weights 9:9:5:2:1:1:1:1:2. Dev LOO selected 9:9:5:2:1:1:1:2 for 8+1
+members (src/loo_joint.py, held-out 23.04/48.28 vs 8-member 22.30/48.28 --
+every LOO fold independently chose w_joint=2, never 0); the 4th transfer
+gets the same unit weight as the other three.
 
 Row order: ORIGINAL tst.npy recording order (no label sorting -- there are
 no labels for sub-05/06). Every member here produces rows in that same
@@ -18,6 +23,10 @@ convention:
   - ED rankings: work/ed_member/ranked_subXX.npy (original order)
   - ridge: computed here, no argsort(tst.y)
   - transfers: rank_candidates follows input order; no label sorting here
+  - jointft 05/06 dumps: work/tst_ranked/jointft_XX_... (original order,
+    re-dumped from the joint checkpoint by work/redump_joint0506.py --
+    CAUTION: the teammates' pseudo tst_stim files for 05/06 must never be
+    consumed, loaders are gated via with_labels)
 
 Usage:  python -m src.make_submission \
             --data-dir provided_material/eeg-mind-reading-challenge/eeg-mind-reading-challenge
@@ -40,9 +49,10 @@ from .ensemble_rank import fuse_mean_rank
 CLIP = "emb_train__clip-vitb32"
 ALEX = "emb_train__alexnet-f3"
 DEV = ["01", "02", "03", "04"]
-# dev LOO selected 9:9:5:2:1:1:1 (3 transfers); the 4th transfer for the
-# submission subjects gets the same unit weight -> 9:9:5:2:1:1:1:1.
-WEIGHTS = [9, 9, 5, 2, 1, 1, 1, 1]
+# dev LOO selected 9:9:5:2:1:1:1:2 incl. the jointft member (src/loo_joint.py,
+# held-out 23.04/48.28); the 4th transfer for the submission subjects gets the
+# same unit weight -> 9:9:5:2:1:1:1:1:2.
+WEIGHTS = [9, 9, 5, 2, 1, 1, 1, 1, 2]
 
 # ---------------------------------------------------------------------------
 # members
@@ -75,7 +85,7 @@ def transfer_member(te_sub: str, tr_sub: str, emb_tag: str) -> np.ndarray:
     emb_tst = load_pooled(f"work/{emb_tag.replace('train', 'test')}.npz")
     _, X_cand, _ = build_target_space(emb_trn, emb_tst, n_components=256)
 
-    tst = load_test_subject(root, te_sub)
+    tst = load_test_subject(root, te_sub, with_labels=False)  # y never used here
     E_tst = eeg_window(tst.X)
     ranked = rank_candidates(model, E_tst, X_cand)
     np.save(f"work/xsubj_probe/ranked_tr{tr_sub}_te{te_sub}_{emb_tag}_s0.npy",
@@ -98,7 +108,7 @@ def ridge_member(sub: str, emb_tag: str) -> np.ndarray:
     X_feat = video_matrix_pooled(emb_trn, trn.video_ids)
     bundle = fit_forward(X_feat, E_trn)
 
-    tst = load_test_subject(root, sub)
+    tst = load_test_subject(root, sub, with_labels=False)  # y never used here
     E_tst = decimate(tst.X, 5, axis=-1, ftype="fir", zero_phase=True)
     E_tst = E_tst[:, :, 5:35]
     X_cand = video_matrix_pooled(emb_tst, TEST_VIDEO_IDS)
@@ -134,10 +144,12 @@ def main():
             ridge_member(sub, CLIP),
         ]
         members += [transfer_member(sub, d, CLIP) for d in DEV]
+        # E-A joint+finetune member; original-order dumps already exist
+        members += [np.load(f"work/tst_ranked/jointft_{sub}_{CLIP}_s0.npy")]
         fused = fuse_mean_rank(members, WEIGHTS)
         path = out_dir / f"sub-{sub}_ranked_candidate_list.npy"
         np.save(path, fused.astype(np.int64))
-        print(f"sub-{sub}: fused 8 members with weights {WEIGHTS} -> {path}")
+        print(f"sub-{sub}: fused {len(members)} members with weights {WEIGHTS} -> {path}")
 
 
 if __name__ == "__main__":
