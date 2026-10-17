@@ -65,6 +65,8 @@ tst 16.7% top-1) — Holdout-Iteration ist konservativ, echte Zahlen tendieren h
 | + Ridge gewichtet 19:1 | 12.01% | 33.58% |
 | + 3 Transfers 9:1:1:1 (xsubj-Sonde) | 11.52% | 36.03% |
 | **+ Ridge + 3 Transfers 9:1:1:1:1 (GRAND)** | **13.24%** | **36.77%** |
+| 2-Raum clip+alexnet InfoNCE 1:1 | 16.18% | 41.18% |
+| **MEGAFUSION: 2 Räume (9:9) + Ridge + 3 Transfers (1:1:1:1:1)** | **16.43%** | **44.12%** |
 
 **Lektion 1 (Pitfall):** Rank-Fusion mit einem *deutlich schwächeren* Member im
 Equal-Weight zieht den Starken Richtung Rauschen — auf Holdout klappte die Fusion,
@@ -95,6 +97,22 @@ Grand-Fusion (9:1:1:1:1): **13.24% / 36.77%** — neuer tst-Bestwert; alle Subje
 profitieren, die schwächsten am meisten (sub-03 5.88→10.78, +4.9 pp top-1).
 Checkpoints: `work/xsubj_probe/model_subXX_*.pt` — Wiederverwendung für
 sub-05/06-Transfer-Rankings ohne Retraining.
+
+### 2-Raum-Fusion + MEGAFUSION (tst, seed 0) — neuer Bestwert 16.43%/44.12%
+Alexnet-tst-InfoNCE (Kette abgeschlossen): 8.82/35.29, 10.78/35.29, 8.82/21.57,
+6.86/27.45 → mean 8.82%/29.90% (clip: 11.03/33.09; vergleichbar stark).
+| System (mean sub-01–04) | top-1 | top-5 |
+|---|---|---|
+| clip oder alexnet solo | 8.8–11.0% | 29.9–33.1% |
+| clip+alexnet 1:1 | 16.18% | 41.18% |
+| + Ridge + 3 Transfers (9:9:1:1:1:1) | **16.43%** | **44.12%** |
+
+Die Holdout-Evidenz (zero top-1-Overlap zwischen Räumen) überträgt sich 1:1 auf
+tst: vergleichbar starke, komplementäre Räume fusionieren besser als alles
+zuvor (+5.2pp top-1 / +8.1pp top-5 über dem besseren Solo). Die Transfers
+addieren v.a. top-5 (+2.9). Per-Subject Megafusion: 19.6/45.1, 23.5/50.0,
+9.8/42.2, 12.8/39.2./sub-03-Top-1 sinkt leicht durch die Transfers (12.8→9.8),
+top-5 +5.9.
 
 ### Rank-Fusion (sub-01, Holdout, Split 0)
 | System | top-1 | top-5 |
