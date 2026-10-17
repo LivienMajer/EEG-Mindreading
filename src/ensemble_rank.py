@@ -50,6 +50,9 @@ def main():
                    help="glob pattern(s) or explicit paths of ranking .npy files")
     p.add_argument("--truth", required=True, help=".npy with per-trial video ids")
     p.add_argument("--out", default=None, help="optional output .npy for fused ranking")
+    p.add_argument("--subject", default="01", help="subject tag for score logging")
+    p.add_argument("--experiment", default="rank-ensemble",
+                   help="experiment tag for score logging")
     args = p.parse_args()
 
     paths: list[str] = []
@@ -68,8 +71,8 @@ def main():
     print(f"\nFUSED (mean rank): top1 {t1:.4f}  top5 {t5:.4f}")
 
     from .log_score import log_score
-    log_score(experiment="rank-ensemble", subject="01", embedding="+".join(
-        Path(f).stem.split("_")[3] for f in set(paths)),
+    log_score(experiment=args.experiment, subject=args.subject, embedding="+".join(
+        Path(f).stem for f in sorted(set(paths))),
               top1=t1, top5=t5,
               note=f"mean-rank fusion of {len(rankings)} rankings")
     if args.out:
