@@ -24,6 +24,7 @@ Usage:
   python -m src.prep_variants --data-dir <challenge root> --emb work/clip_vitb32_daniel.npz \
       --variants A B --subs 01 02 03 04
   python -m src.prep_variants --compare A B C D       # paired tests on the dumps
+  python -m src.prep_variants --data-dir <root> --variants A --emb work/rsa_features/clap_audio.npz       --tag _clap                                     # same member, other target space
 """
 
 from __future__ import annotations
@@ -127,7 +128,7 @@ def run(args):
                                   epochs=args.epochs, lr=3e-4, temperature=0.1,
                                   seed=args.seed, log_every=50)
             ranked = rank_candidates(model, E_tst, X_cand)[order]
-            np.save(OUT / f"{name}_{sub}_s{args.seed}.npy", ranked)
+            np.save(OUT / f"{name}{args.tag}_{sub}_s{args.seed}.npy", ranked)
             if not labeled:
                 print(f"sub-{sub} variant {name}: no labels, ranking dumped in original "
                       f"order ({time.time() - t0:.0f} s)", flush=True)
@@ -137,7 +138,7 @@ def run(args):
             print(f"sub-{sub} variant {name}: top-1 {t1:.4f}  top-5 {t5:.4f}  "
                   f"({time.time() - t0:.0f} s)", flush=True)
             from .log_score import log_score
-            log_score(experiment="prep-variant", subject=sub, embedding="clip-vitb32-xsubj",
+            log_score(experiment="prep-variant", subject=sub, embedding=Path(args.emb).stem,
                       window=f"{T_WIN}", n_components=256, embed_dim=256,
                       epochs=args.epochs, batch_size=256, temperature=0.1, lr=3e-4,
                       seed=args.seed, holdout=0, top1=t1, top5=t5,
@@ -174,7 +175,10 @@ def compare(args):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--data-dir")
-    p.add_argument("--emb", default="work/clip_vitb32_daniel.npz")
+    p.add_argument("--emb", default="work/clip_vitb32_daniel.npz",
+                   help="video bank: npz with ids + emb (any feature set, e.g. "
+                        "eeg_pipeline.rsa_features output)")
+    p.add_argument("--tag", default="", help="suffix for dump names, e.g. _clap")
     p.add_argument("--variants", nargs="+", default=list(VARIANTS), choices=list(VARIANTS))
     p.add_argument("--subs", nargs="+", default=["01", "02", "03", "04"])
     p.add_argument("--epochs", type=int, default=200)
