@@ -25,12 +25,25 @@ def similarity(pred: np.ndarray, cand_emb: np.ndarray, col_norm: bool = False) -
     return sim
 
 
+def csls_similarity(pred: np.ndarray, cand_emb: np.ndarray, k: int = 10) -> np.ndarray:
+    """Cross-domain similarity local scaling for EEG queries and video candidates."""
+    if k < 1:
+        raise ValueError("CSLS neighborhood size k must be positive")
+    sim = pred @ cand_emb.T
+    k_query = min(k, sim.shape[1])
+    k_candidate = min(k, sim.shape[0])
+    query_density = np.partition(sim, -k_query, axis=1)[:, -k_query:].mean(axis=1)
+    candidate_density = np.partition(sim, -k_candidate, axis=0)[-k_candidate:, :].mean(axis=0)
+    return 2 * sim - query_density[:, None] - candidate_density[None, :]
+
+
 def retrieval_metrics(pred: np.ndarray, y: np.ndarray, bank_emb: np.ndarray, ks, seed: int = 0,
-                      col_norm: bool = False) -> dict:
+                      col_norm: bool = False, csls_k: int | None = None) -> dict:
     """pred: (n, d) unit EEG embeddings; y: (n,) bank indices. Candidates = unique videos in y."""
     pool = np.unique(y)
     col = np.searchsorted(pool, y)
-    sim = similarity(pred, bank_emb[pool], col_norm)
+    sim = (csls_similarity(pred, bank_emb[pool], csls_k)
+           if csls_k is not None else similarity(pred, bank_emb[pool], col_norm))
     rng = np.random.default_rng(seed)
     out = {"n_trials": int(len(y)), "n_videos": int(len(pool))}
     for k in ks:
@@ -60,10 +73,11 @@ def average_repeats(pred: np.ndarray, y: np.ndarray, subject: np.ndarray):
 
 
 def permutation_test(pred: np.ndarray, y: np.ndarray, bank_emb: np.ndarray, n_perm: int, seed: int = 0,
-                     col_norm: bool = False) -> dict:
+                     col_norm: bool = False, csls_k: int | None = None) -> dict:
     """Top-1 among all candidates vs. the null of shuffled trial->video labels."""
     pool = np.unique(y)
-    sim = similarity(pred, bank_emb[pool], col_norm)
+    sim = (csls_similarity(pred, bank_emb[pool], csls_k)
+           if csls_k is not None else similarity(pred, bank_emb[pool], col_norm))
     best = sim.argmax(1)
     col = np.searchsorted(pool, y)
     obs = float((best == col).mean())

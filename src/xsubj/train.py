@@ -3,6 +3,7 @@
     python -m src.xsubj.train --config configs/xsubj.yaml                  # trn splits of all subjects
     python -m src.xsubj.train --config configs/xsubj.yaml --holdout sub-01 # leave one subject out
     python -m src.xsubj.train --config configs/xsubj.yaml --finetune models/xsubj/checkpoints/all/model.pt --subject sub-05
+    python -m src.xsubj.eval --config configs/xsubj.yaml --models encoder --mode official --set model.dual_projection=true
 """
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn.functional as F
+import yaml
 from torch.utils.data import DataLoader
 
 from src.xsubj.eeg.dataset import TrialDataset, Trials
@@ -53,6 +55,18 @@ def rank_score(pred, y, bank_emb) -> float:
     return float(1 - ((sim > s_true[:, None]).sum(1) / max(1, len(pool) - 1)).mean())
 
 
+@torch.no_grad()
+def target_embeddings(model: EEGEncoder, bank: VideoBank, device) -> np.ndarray:
+    if not model.gated_fusion:
+        return bank.emb
+    if bank.visual_emb is None or bank.audio_emb is None:
+        raise ValueError(
+            "Gated fusion needs separate visual and audio embedding archives")
+    visual = torch.from_numpy(bank.visual_emb).to(device)
+    audio = torch.from_numpy(bank.audio_emb).to(device)
+    return model.fuse_video_embeddings(visual, audio).float().cpu().numpy()
+
+
 def contrastive_loss(z, y, E, train_pool, scale, t: dict):
     if t["negatives"] == "all":
         logits = scale * z @ E[train_pool].T
@@ -75,9 +89,34 @@ def fit(cfg, train: Trials, val: Trials | None, bank: VideoBank, subject_list, f
     t, device = cfg["train"], get_device()
     _, n_ch, n_t = train.X.shape
     model = cfg.get("_model") or EEGEncoder(n_ch, n_t, bank.dim, len(subject_list), cfg["model"], t["temperature"],
-                                            fs=fs, tmin=cfg["preprocess"]["tmin"])
+                                            fs=fs, tmin=cfg["preprocess"]["tmin"],
+                                            visual_dim=(bank.visual_emb.shape[1]
+                                                        if bank.visual_emb is not None else None),
+                                            audio_dim=(bank.audio_emb.shape[1]
+                                                       if bank.audio_emb is not None else None))
+    gated_fusion = model.gated_fusion
+    if gated_fusion and (bank.visual_emb is None or bank.audio_emb is None):
+        raise ValueError(
+            "Gated fusion requires separate visual and audio archives in "
+            "data.video_emb")
     model.to(device)
-    E = torch.from_numpy(bank.emb).to(device)
+    E = None if gated_fusion else torch.from_numpy(bank.emb).to(device)
+    E_visual = (
+        torch.from_numpy(bank.visual_emb).to(device)
+        if gated_fusion and bank.visual_emb is not None else None)
+    E_audio = (
+        torch.from_numpy(bank.audio_emb).to(device)
+        if gated_fusion and bank.audio_emb is not None else None)
+    dual_projection = model.dual_projection
+    audio_loss_weight = float(t.get("audio_loss_weight", 1.0))
+    if dual_projection:
+        if bank.dim % 2:
+            raise ValueError(
+                "Dual projection expects equally sized video and audio "
+                f"embedding spaces; got combined dimension {bank.dim}")
+        if audio_loss_weight <= 0:
+            raise ValueError("train.audio_loss_weight must be greater than zero")
+        E_video, E_audio = (F.normalize(part, dim=-1) for part in E.chunk(2, dim=-1))
     train_pool = torch.from_numpy(np.unique(train.y)).to(device)
     opt = torch.optim.AdamW(params or model.parameters(), lr=t["lr"], weight_decay=t["weight_decay"])
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, t["epochs"])
@@ -93,9 +132,25 @@ def fit(cfg, train: Trials, val: Trials | None, bank: VideoBank, subject_list, f
         for x, y, s in loader:
             x, y, s = x.to(device), y.to(device), s.to(device)
             with torch.autocast(device.type, enabled=use_amp):
-                z = model(x, s).float()
+                if dual_projection:
+                    z_video, z_audio = (
+                        z.float() for z in model.forward_modalities(x, s))
+                else:
+                    z = model(x, s).float()
             scale = model.logit_scale.clamp(max=math.log(100)).exp()
-            loss = contrastive_loss(z, y, E, train_pool, scale, t)
+            if dual_projection:
+                video_loss = contrastive_loss(
+                    z_video, y, E_video, train_pool, scale, t)
+                audio_loss = contrastive_loss(
+                    z_audio, y, E_audio, train_pool, scale, t)
+                loss = (video_loss + audio_loss_weight * audio_loss) / (
+                    1 + audio_loss_weight)
+            else:
+                if gated_fusion:
+                    assert E_visual is not None and E_audio is not None
+                    E = model.fuse_video_embeddings(E_visual, E_audio)
+                assert E is not None
+                loss = contrastive_loss(z, y, E, train_pool, scale, t)
             opt.zero_grad(set_to_none=True)
             scaler.scale(loss).backward()
             scaler.step(opt)
@@ -104,7 +159,9 @@ def fit(cfg, train: Trials, val: Trials | None, bank: VideoBank, subject_list, f
         sched.step()
 
         if val is not None and len(val):
-            score = rank_score(embed(model, val.X, val.subj, device), val.y, bank.emb)
+            score = rank_score(
+                embed(model, val.X, val.subj, device), val.y,
+                target_embeddings(model, bank, device))
             if score > best:
                 best, best_state, bad = score, copy.deepcopy(model.state_dict()), 0
             else:
@@ -157,12 +214,17 @@ def save_checkpoint(path: Path, model, cfg, subject_list, fs):
                 "n_channels": model.backbone_in[0], "n_times": model.backbone_in[1]}, path)
 
 
-def load_checkpoint(path, bank_dim: int):
+def load_checkpoint(path, bank: VideoBank):
     ck = torch.load(path, map_location="cpu", weights_only=False)
     cfg = ck["cfg"]
     n_subj = ck["state_dict"]["subject_layer.W"].shape[0] if cfg["model"]["subject_layer"] else 0
-    model = EEGEncoder(ck["n_channels"], ck["n_times"], bank_dim, n_subj, cfg["model"],
-                       fs=ck["fs"], tmin=cfg["preprocess"]["tmin"])
+    model = EEGEncoder(
+        ck["n_channels"], ck["n_times"], bank.dim, n_subj, cfg["model"],
+        fs=ck["fs"], tmin=cfg["preprocess"]["tmin"],
+        visual_dim=(bank.visual_emb.shape[1]
+                    if bank.visual_emb is not None else None),
+        audio_dim=(bank.audio_emb.shape[1]
+                   if bank.audio_emb is not None else None))
     model.load_state_dict(ck["state_dict"])
     return model, ck
 
@@ -173,17 +235,31 @@ def main():
     ap.add_argument("--holdout", default=None, help="subject to leave out (LOSO)")
     ap.add_argument("--finetune", default=None, help="checkpoint to adapt to --subject")
     ap.add_argument("--subject", default=None)
+    ap.add_argument("--video-emb", nargs="+", default=None,
+                    help="override data.video_emb with one or more archives")
+    ap.add_argument("--set", nargs="+", default=[], metavar="KEY=VALUE",
+                    help="override config values, e.g. model.dual_projection=true")
     ap.add_argument("--out", default=None, help="run name under checkpoints/")
     args = ap.parse_args()
 
     cfg = load_config(args.config)
+    for kv in args.set:
+        key, value = kv.split("=", 1)
+        *path, last = key.split(".")
+        node = cfg
+        for k in path:
+            node = node[k]
+        node[last] = yaml.safe_load(value)
+    if args.video_emb:
+        cfg["data"]["video_emb"] = (
+            args.video_emb[0] if len(args.video_emb) == 1 else args.video_emb)
     seed_everything(cfg["seed"])
     data = load_preprocessed(cfg)
     bank = load_video_bank(cfg)
     fs = data[0].fs
 
     if args.finetune:
-        model, ck = load_checkpoint(args.finetune, bank.dim)
+        model, ck = load_checkpoint(args.finetune, bank)
         model.to(get_device())
         d = next(d for d in data if d.subject == args.subject and d.split == "trn")
         trials = Trials([d], bank, [])

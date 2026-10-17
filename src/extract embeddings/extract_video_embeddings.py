@@ -1,4 +1,4 @@
-"""Extract one pooled image-model embedding for each video."""
+"""Extract one image or temporal-video embedding for each video."""
 
 from __future__ import annotations
 
@@ -19,16 +19,19 @@ from tqdm import tqdm
 class ImageEncoder:
     """Model adapter used by the model-independent extraction pipeline."""
 
-    encode: Callable[[torch.Tensor], torch.Tensor]
-    preprocess: Callable[[Image.Image], torch.Tensor]
+    encode: Callable[[torch.Tensor], torch.Tensor] | None
+    encode_multilayer: Callable[
+        [torch.Tensor, tuple[int, ...]], torch.Tensor] | None
+    preprocess: Callable[[Image.Image], torch.Tensor] | None
     model_name: str
     pretrained: str
+    encode_video: Callable[[list[Image.Image]], torch.Tensor] | None = None
 
 
 def load_encoder(
     backend: str,
     model_name: str,
-    pretrained: str,
+    pretrained: str | None,
     device: str,
 ) -> ImageEncoder:
     """Load an image-embedding backend.
@@ -39,17 +42,92 @@ def load_encoder(
     if backend == "open_clip":
         import open_clip
 
+        pretrained = pretrained or "openai"
         model, _, preprocess = open_clip.create_model_and_transforms(
             model_name, pretrained=pretrained)
         model = model.eval().to(device)
+
+        def encode_multilayer(
+            images: torch.Tensor, layers: tuple[int, ...]
+        ) -> torch.Tensor:
+            blocks = getattr(getattr(model.visual, "transformer", None),
+                             "resblocks", None)
+            if blocks is None:
+                raise ValueError(
+                    f"{model_name} does not expose ViT transformer blocks")
+            if any(layer < 1 or layer > len(blocks) for layer in layers):
+                raise ValueError(
+                    f"Requested layers {layers} are outside 1..{len(blocks)}")
+
+            activations: dict[int, torch.Tensor] = {}
+            handles = []
+            for layer in layers:
+                handles.append(blocks[layer - 1].register_forward_hook(
+                    lambda *hook_args, layer=layer:
+                    activations.__setitem__(layer, hook_args[-1])))
+            try:
+                final = model.encode_image(images)
+            finally:
+                for handle in handles:
+                    handle.remove()
+
+            spaces = []
+            for layer in layers:
+                activation = activations.get(layer)
+                if not isinstance(activation, torch.Tensor) or activation.ndim != 3:
+                    raise RuntimeError(
+                        f"ViT block {layer} did not return a sequence tensor")
+                if activation.shape[0] == images.shape[0]:
+                    batch_first = activation
+                elif activation.shape[1] == images.shape[0]:
+                    batch_first = activation.permute(1, 0, 2)
+                else:
+                    raise RuntimeError(
+                        f"Unexpected ViT block {layer} output shape: "
+                        f"{tuple(activation.shape)}")
+                pooled = batch_first[:, 1:, :].mean(dim=1)
+                spaces.append(F.normalize(pooled, dim=-1))
+            spaces.append(F.normalize(final, dim=-1))
+            combined = torch.cat(spaces, dim=-1) / np.sqrt(len(spaces))
+            return F.normalize(combined, dim=-1)
+
         return ImageEncoder(
             encode=model.encode_image,
+            encode_multilayer=encode_multilayer,
             preprocess=preprocess,
             model_name=model_name,
             pretrained=pretrained,
         )
+    if backend == "videomae":
+        if pretrained is not None:
+            raise ValueError(
+                "VideoMAE weights are selected through --model; omit --pretrained")
+        from transformers import VideoMAEImageProcessor, VideoMAEModel
+
+        processor = VideoMAEImageProcessor.from_pretrained(model_name)
+        model = VideoMAEModel.from_pretrained(model_name).eval().to(device)
+
+        def encode_video(frames: list[Image.Image]) -> torch.Tensor:
+            video_frames = [np.asarray(frame.convert("RGB")) for frame in frames]
+            inputs = processor(video_frames, return_tensors="pt")
+            pixels = inputs["pixel_values"].to(device)
+            if pixels.shape[1] != model.config.num_frames:
+                raise ValueError(
+                    f"{model_name} requires {model.config.num_frames} frames; "
+                    f"received {pixels.shape[1]}")
+            tokens = model(pixel_values=pixels).last_hidden_state
+            return F.normalize(tokens.mean(dim=1), dim=-1)
+
+        return ImageEncoder(
+            encode=None,
+            encode_multilayer=None,
+            preprocess=None,
+            model_name=model_name,
+            pretrained="huggingface",
+            encode_video=encode_video,
+        )
     raise ValueError(
-        f"Unsupported backend {backend!r}; currently supported: open_clip")
+        f"Unsupported backend {backend!r}; choose open_clip or videomae")
 
 
 def sample_frames(video_path: Path, n_frames: int) -> list[Image.Image]:
@@ -69,16 +147,30 @@ def extract_embeddings(
     output_path: Path,
     backend: str = "open_clip",
     model_name: str = "ViT-B-32",
-    pretrained: str = "openai",
+    pretrained: str | None = None,
     n_frames: int = 8,
+    intermediate_layers: tuple[int, ...] = (),
     device: str | None = None,
     limit: int | None = None,
     overwrite: bool = False,
 ) -> None:
-    """Encode videos as normalized means of normalized frame embeddings."""
+    """Extract normalized per-video image or temporal-video embeddings.
+
+    When intermediate layers are requested, mean-pooled patch activations from
+    those 1-based ViT blocks are concatenated with the final image embedding.
+    Each layer space is normalized before concatenation.
+    VideoMAE receives the full ordered frame sequence and mean-pools its
+    contextualized spatiotemporal output tokens per video.
+    """
 
     if n_frames < 1:
         raise ValueError("--n-frames must be at least 1")
+    if len(set(intermediate_layers)) != len(intermediate_layers):
+        raise ValueError("--intermediate-layers must not contain duplicates")
+    if any(layer < 1 for layer in intermediate_layers):
+        raise ValueError("--intermediate-layers are 1-based and must be positive")
+    if backend == "videomae" and intermediate_layers:
+        raise ValueError("--intermediate-layers only applies to the open_clip backend")
     if limit is not None and limit < 1:
         raise ValueError("--limit must be at least 1")
     if output_path.exists() and not overwrite:
@@ -109,18 +201,34 @@ def extract_embeddings(
         raise RuntimeError(
             "CUDA was requested, but this PyTorch installation cannot use CUDA.")
 
-    print(f"Loading {backend}:{model_name} ({pretrained}) on {device}")
+    print(f"Loading {backend}:{model_name} ({pretrained or 'model default'}) on {device}")
     encoder = load_encoder(backend, model_name, pretrained, device)
+    if backend == "videomae" and n_frames != 16:
+        raise ValueError(
+            f"{model_name} expects 16 frames; pass --n-frames 16 (got {n_frames})")
 
     embeddings = []
     for video_path in tqdm(videos, desc="Encoding videos"):
         try:
             frames = sample_frames(video_path, n_frames)
-            batch = torch.stack(
-                [encoder.preprocess(frame) for frame in frames]).to(device)
-            frame_embeddings = F.normalize(encoder.encode(batch), dim=-1)
-            video_embedding = F.normalize(
-                frame_embeddings.mean(dim=0), dim=0)
+            if encoder.encode_video is not None:
+                video_embedding = encoder.encode_video(frames)[0]
+            else:
+                if encoder.encode is None or encoder.preprocess is None:
+                    raise RuntimeError(
+                        f"Incomplete image encoder adapter for {backend}")
+                batch = torch.stack(
+                    [encoder.preprocess(frame) for frame in frames]).to(device)
+                if intermediate_layers:
+                    if encoder.encode_multilayer is None:
+                        raise ValueError(
+                            "This image backend does not support intermediate layers")
+                    frame_embeddings = encoder.encode_multilayer(
+                        batch, intermediate_layers)
+                else:
+                    frame_embeddings = F.normalize(encoder.encode(batch), dim=-1)
+                video_embedding = F.normalize(
+                    frame_embeddings.mean(dim=0), dim=0)
             embeddings.append(video_embedding.cpu().numpy().astype(np.float32))
         except Exception as exc:
             raise RuntimeError(f"Failed to encode {video_path}") from exc
@@ -134,6 +242,7 @@ def extract_embeddings(
         model=np.asarray(encoder.model_name),
         pretrained=np.asarray(encoder.pretrained),
         n_frames=np.asarray(n_frames, dtype=np.int32),
+        intermediate_layers=np.asarray(intermediate_layers, dtype=np.int32),
     )
     print(f"Saved {len(video_ids)} embeddings (dim {embeddings[0].shape[0]})")
     print(f"Output: {output_path}")
@@ -141,20 +250,24 @@ def extract_embeddings(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Extract pooled image-model embeddings from MP4 videos.")
+        description="Extract image or temporal-video embeddings from MP4 videos.")
     parser.add_argument("--videos", type=Path, required=True,
                         help="Folder containing numeric-ID .mp4 files")
     parser.add_argument("--out", type=Path, required=True,
                         help="Output .npz archive")
     parser.add_argument("--backend", default="open_clip",
-                        choices=("open_clip",),
-                        help="Image-model library to use")
+                        choices=("open_clip", "videomae"),
+                        help="Image encoder or temporal video encoder")
     parser.add_argument("--model", default="ViT-B-32",
-                        help="Model name supported by the selected backend")
-    parser.add_argument("--pretrained", default="openai",
-                        help="Pretrained weights tag supported by the backend")
+                        help="Backend model name or Hugging Face model ID")
+    parser.add_argument("--pretrained", default=None,
+                        help="OpenCLIP pretrained tag (VideoMAE uses --model)")
     parser.add_argument("--n-frames", type=int, default=8,
                         help="Number of evenly spaced frames per video")
+    parser.add_argument("--intermediate-layers", type=int, nargs="+", default=(),
+                        metavar="LAYER",
+                        help="Also pool these 1-based ViT block activations "
+                             "before the final image embedding")
     parser.add_argument("--device", choices=("cuda", "cpu"))
     parser.add_argument("--limit", type=int,
                         help="Only encode the first N videos (smoke testing)")
@@ -168,6 +281,7 @@ def main() -> None:
         model_name=args.model,
         pretrained=args.pretrained,
         n_frames=args.n_frames,
+        intermediate_layers=tuple(args.intermediate_layers),
         device=args.device,
         limit=args.limit,
         overwrite=args.overwrite,

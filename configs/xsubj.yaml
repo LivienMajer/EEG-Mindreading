@@ -29,10 +29,10 @@ model:
 
 train:
   epochs: 80
-  patience: 12
+  patience: 6
   val_frac: 0.15
-  batch_size: 256
-  lr: 0.0003
+  batch_size: 64
+  lr: 0.0006
   weight_decay: 0.0001
   temperature: 0.07
   negatives: in_batch

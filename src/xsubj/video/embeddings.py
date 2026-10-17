@@ -30,12 +30,29 @@ def _legacy_identity(path: Path) -> tuple[str, str, str]:
     return "legacy", stem, ""
 
 
+def _feature_modality(
+    backend: str, model: str, weights: str, path: Path
+) -> str:
+    identity = " ".join((backend, model, weights, path.stem)).lower()
+    is_audio = "clap" in identity or "audio" in identity
+    is_visual = any(
+        token in identity
+        for token in ("open_clip", "clip", "videomae", "slowfast", "x3d"))
+    if is_audio and not is_visual:
+        return "audio"
+    if is_visual and not is_audio:
+        return "visual"
+    return "unknown"
+
+
 @dataclass
 class VideoBank:
     """Sorted video identifiers and their aligned embedding vectors."""
 
     ids: np.ndarray
     emb: np.ndarray
+    visual_emb: np.ndarray | None = None
+    audio_emb: np.ndarray | None = None
 
     @property
     def dim(self) -> int:
@@ -122,7 +139,9 @@ def load_video_bank(cfg: dict) -> VideoBank:
 
             slot_name = ":".join(part for part in (backend, model, weights) if part)
             slot = slots.setdefault(slot_name, {
-                "dim": embeddings.shape[1], "values": {}})
+                "dim": embeddings.shape[1], "values": {},
+                "modality": _feature_modality(
+                    backend, model, weights, path)})
             if slot["dim"] != embeddings.shape[1]:
                 raise ValueError(
                     f"Embedding dimension changed for model {slot_name}: "
@@ -141,6 +160,16 @@ def load_video_bank(cfg: dict) -> VideoBank:
         *(slot["values"].keys() for slot in slots.values())))
     if not video_ids:
         raise ValueError("No video embeddings found in the configured archives")
+    if cfg.get("model", {}).get("gated_fusion", False):
+        unknown_slots = [
+            name for name, slot in slots.items()
+            if slot["modality"] == "unknown"]
+        if unknown_slots:
+            raise ValueError(
+                "Gated fusion cannot classify these embedding archives as "
+                f"visual or audio: {unknown_slots}. Use separate archives "
+                "with model/backend metadata (e.g. OpenCLIP/VideoMAE and "
+                "LAION CLAP).")
     vectors = []
     scale = np.sqrt(len(slots))
     for video_id in video_ids:
@@ -160,4 +189,30 @@ def load_video_bank(cfg: dict) -> VideoBank:
             "All configured model embeddings are zero for video IDs: "
             f"{[video_ids[i] for i in invalid[:10]]}")
     embeddings /= norms
-    return VideoBank(np.asarray(video_ids), embeddings)
+
+    def modality_embeddings(modality: str) -> np.ndarray | None:
+        modality_slots = [
+            slot for slot in slots.values()
+            if slot["modality"] == modality]
+        if not modality_slots:
+            return None
+        rows = []
+        for video_id in video_ids:
+            parts = []
+            for slot in modality_slots:
+                value = slot["values"].get(video_id)
+                if value is None:
+                    value = np.zeros(slot["dim"], dtype=np.float32)
+                norm = float(np.linalg.norm(value))
+                parts.append(
+                    value / max(norm, 1e-8) / np.sqrt(len(modality_slots)))
+            rows.append(np.concatenate(parts))
+        result = np.stack(rows).astype(np.float32)
+        row_norms = np.linalg.norm(result, axis=1, keepdims=True)
+        np.divide(result, row_norms, out=result, where=row_norms > 1e-8)
+        return result
+
+    return VideoBank(
+        np.asarray(video_ids), embeddings,
+        visual_emb=modality_embeddings("visual"),
+        audio_emb=modality_embeddings("audio"))

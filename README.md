@@ -39,18 +39,127 @@ Use `--device cpu` if CUDA is unavailable. For a small smoke test, add
 contain all IDs needed for training or evaluation. The first run may download
 pretrained weights.
 
+To test intermediate ViT representations (patch-token means after blocks 6
+and 12, plus the final CLIP embedding), extract a separate feature bank:
+
+```powershell
+python "src\extract embeddings\extract_video_embeddings.py" --videos stimuli_train --out work\emb_train__clip-vitb32-layers6-12.npz --model ViT-B-32 --pretrained openai --device cuda --intermediate-layers 6 12
+python "src\extract embeddings\extract_video_embeddings.py" --videos stimuli_test --out work\emb_test__clip-vitb32-layers6-12.npz --model ViT-B-32 --pretrained openai --device cuda --intermediate-layers 6 12
+```
+
+The extractor normalizes each layer representation independently before
+concatenation. To train/evaluate against these features and separate CLAP
+features, pass all split archives to the evaluator:
+
+```powershell
+python -m src.xsubj.eval --config configs/xsubj.yaml --models encoder --mode official --video-emb work\emb_train__clip-vitb32-layers6-12.npz work\emb_test__clip-vitb32-layers6-12.npz work\emb_train__clap.npz work\emb_test__clap.npz
+```
+
+The test CLAP archive must be present as `work\emb_test__clap.npz`; extract it
+with the audio commands below if it is not already available.
+To save a final checkpoint trained against these targets, pass the same
+`--video-emb` arguments to `src.xsubj.train` and choose a new `--out` run name.
+
+For temporal visual features, the same extractor can run VideoMAE on a
+chronologically sampled 16-frame sequence. It pools the model's contextualized
+spatiotemporal tokens per video, rather than averaging independent image
+embeddings:
+
+```powershell
+python "src\extract embeddings\extract_video_embeddings.py" --backend videomae --model MCG-NJU/videomae-base --videos stimuli_train --out work\emb_train__videomae.npz --n-frames 16 --device cuda
+python "src\extract embeddings\extract_video_embeddings.py" --backend videomae --model MCG-NJU/videomae-base --videos stimuli_test --out work\emb_test__videomae.npz --n-frames 16 --device cuda
+python -m src.xsubj.eval --config configs/xsubj.yaml --models encoder --mode official --video-emb work\emb_train__videomae.npz work\emb_test__videomae.npz work\emb_train__clap.npz work\emb_test__clap.npz
+```
+
+To augment rather than replace the static CLIP representation, add both
+`work\emb_train__clip-vitb32-layers6-12.npz` and
+`work\emb_test__clip-vitb32-layers6-12.npz` before the CLAP archives in
+`--video-emb`. The first run downloads the VideoMAE checkpoint from Hugging
+Face; model inference requires a 16-frame clip.
+
+To retrain the current best combined feature setup and score its checkpoint on
+the labeled test trials, run these commands. Use a new `--out` name for every
+run so you do not overwrite a previous checkpoint:
+
+```powershell
+python -m src.xsubj.train --config configs/xsubj.yaml --video-emb work\emb_train__clip-vitb32-layers6-12.npz work\emb_test__clip-vitb32-layers6-12.npz work\emb_train__videomae.npz work\emb_test__videomae.npz work\emb_train__clap.npz work\emb_test__clap.npz --out clip_layers6_12_videomae_rerun
+python -m src.xsubj.submit --config configs/xsubj.yaml --model encoder --checkpoint models\xsubj\checkpoints\clip_layers6_12_videomae_rerun\model.pt --subjects sub-01 sub-02 sub-03 sub-04 --out work\submissions_clip_layers6_12_videomae_rerun
+```
+
+The first command trains and saves the model. The second uses that exact
+checkpoint to rank the 102 candidates for each subject and reports top-1 and
+top-5 against the available test labels. Submission uses candidate
+column-normalization by default; add `--no-col-norm` to disable it.
+
+To compare Cross-Domain Similarity Local Scaling (CSLS, k=10) against raw
+cosine and column-normalized ranking during evaluation, use:
+
+```powershell
+python -m src.xsubj.eval --config configs/xsubj.yaml --models encoder --mode official --video-emb work\emb_train__clip-vitb32-layers6-12.npz work\emb_test__clip-vitb32-layers6-12.npz work\emb_train__videomae.npz work\emb_test__videomae.npz work\emb_train__clap.npz work\emb_test__clap.npz
+```
+
+Evaluation reports all three ranking methods and their permutation-test
+results. To create candidate rankings with CSLS from a saved checkpoint, add
+`--csls` to the submission command:
+
+```powershell
+python -m src.xsubj.submit --config configs/xsubj.yaml --model encoder --checkpoint models\xsubj\checkpoints\clip_layers6_12_videomae_rerun\model.pt --subjects sub-01 sub-02 sub-03 sub-04 --out work\submissions_clip_layers6_12_videomae_csls --csls
+```
+
+CSLS uses the other test EEG trials for local-density correction; add the flag
+to compare it with the default column-normalized ranking.
+
+A validation-selected follow-up experiment disables cross-subject trial
+averaging while keeping the same CLIP layer 6/12, VideoMAE, and CLAP features.
+In one matched run, its held-out training-video rank score was 0.746 versus
+0.735 for the default augmentation. On labeled subjects, its CSLS average
+top-1/top-5 was 12.25%/35.54%, compared with 12.01%/34.56% for the existing
+CSLS checkpoint; this is a small single-seed gain, not yet evidence of a
+reliable improvement. Reproduce it without overwriting prior runs:
+
+```powershell
+python -m src.xsubj.train --config configs/xsubj.yaml --video-emb work\emb_train__clip-vitb32-layers6-12.npz work\emb_test__clip-vitb32-layers6-12.npz work\emb_train__videomae.npz work\emb_test__videomae.npz work\emb_train__clap.npz work\emb_test__clap.npz --set train.xsubj_avg.prob=0 --out rankall_no_xsubjavg_20261017
+python -m src.xsubj.submit --config configs/xsubj.yaml --model encoder --checkpoint models\xsubj\checkpoints\rankall_no_xsubjavg_20261017\model.pt --subjects sub-01 sub-02 sub-03 sub-04 --out work\submissions_rankall_no_xsubjavg_20261017 --csls
+```
+
+To ensemble independently trained encoders with different target spaces, rank
+the same candidates with each checkpoint and fuse the rankings using equal-
+weight Borda rank (average candidate rank). For example, combine the original
+CLIP+CLAP encoder, multilayer CLIP+CLAP, and multilayer CLIP+VideoMAE+CLAP:
+
+```powershell
+python -m src.xsubj.submit --config configs/xsubj.yaml --model rank-ensemble --checkpoints models\xsubj\checkpoints\branchmerge_20261017\model.pt models\xsubj\checkpoints\clip_layers6_12\model.pt models\xsubj\checkpoints\clip_layers6_12_videomae_csls\model.pt --subjects sub-01 sub-02 sub-03 sub-04 --out work\submissions_rank_ensemble --csls
+```
+
+The command prints each member's score and the fused score for labeled
+subjects, then writes the Borda-fused candidate order. Member checkpoints must
+use matching EEG preprocessing and challenge data; their video embedding
+spaces may differ. Use a new output directory when comparing variants.
+
+To retrain all three members first, use distinct run names, then substitute
+those checkpoint paths in the rank-ensemble command:
+
+```powershell
+python -m src.xsubj.train --config configs/xsubj.yaml --video-emb work\emb_train__clip-clap.npz work\emb_test__clip-clap.npz --out rank_member_clipclap
+python -m src.xsubj.train --config configs/xsubj.yaml --video-emb work\emb_train__clip-vitb32-layers6-12.npz work\emb_test__clip-vitb32-layers6-12.npz work\emb_train__clap.npz work\emb_test__clap.npz --out rank_member_layers_clap
+python -m src.xsubj.train --config configs/xsubj.yaml --video-emb work\emb_train__clip-vitb32-layers6-12.npz work\emb_test__clip-vitb32-layers6-12.npz work\emb_train__videomae.npz work\emb_test__videomae.npz work\emb_train__clap.npz work\emb_test__clap.npz --out rank_member_layers_motion_clap
+python -m src.xsubj.submit --config configs/xsubj.yaml --model rank-ensemble --checkpoints models\xsubj\checkpoints\rank_member_clipclap\model.pt models\xsubj\checkpoints\rank_member_layers_clap\model.pt models\xsubj\checkpoints\rank_member_layers_motion_clap\model.pt --subjects sub-01 sub-02 sub-03 sub-04 --out work\submissions_rank_ensemble_rerun --csls
+```
+
 ## 2. Extract video-audio embeddings
 
 The audio extractor uses LAION CLAP by default:
 
 ```powershell
-python "src\extract embeddings\extract_audio_embeddings.py" --videos stimuli_train --out work\train_clap.npz --backend laion_clap --model HTSAT-tiny --device cuda
-python "src\extract embeddings\extract_audio_embeddings.py" --videos stimuli_test --out work\test_clap.npz --backend laion_clap --model HTSAT-tiny --device cuda
+python "src\extract embeddings\extract_audio_embeddings.py" --videos stimuli_train --out work\train_clap.npz --backend laion_clap --model HTSAT-tiny --device cuda --silence-rms 0.0001
+python "src\extract embeddings\extract_audio_embeddings.py" --videos stimuli_test --out work\test_clap.npz --backend laion_clap --model HTSAT-tiny --device cuda --silence-rms 0.0001
 ```
 
-Videos without an audio stream are retained with a zero audio vector and their
-IDs are reported. Decode or model errors stop extraction with the video path
-in the error. Use `--device cpu` when CUDA is unavailable.
+Videos without an audio stream or whose decoded waveform RMS is below
+`--silence-rms` are retained with a zero audio vector and their IDs/RMS
+threshold are recorded in the archive. The default silence threshold is
+`1e-4` for normalized float audio. Decode or model errors stop extraction with
+the video path in the error. Use `--device cpu` when CUDA is unavailable.
 
 Both extractors save `video_ids` and `embeddings` arrays, along with model
 metadata. The current `configs/xsubj.yaml` uses the existing combined
@@ -93,6 +202,42 @@ subject.
 
 For a quick pipeline check, add `--epochs 1` to an encoder evaluation. This
 is only a smoke test, not a meaningful accuracy run.
+
+To train separate EEG projection heads with a video contrastive loss and an
+audio contrastive loss, then retrieve using their equal-weight fused
+embedding, run:
+
+```powershell
+python -m src.xsubj.eval --config configs/xsubj.yaml --models encoder --mode official --set model.dual_projection=true
+```
+
+This option expects a combined embedding bank with equal-sized video and audio
+spaces concatenated in that order. `train.audio_loss_weight` defaults to 1.0
+and can be changed with `--set`; the default single-projection training remains
+unchanged.
+
+To learn gated fusion between visual features (CLIP intermediate layers plus
+VideoMAE) and CLAP audio features, first extract new silence-filtered CLAP
+archives, then train and submit with those separate archives:
+
+```powershell
+python "src\extract embeddings\extract_audio_embeddings.py" --videos stimuli_train --out work\emb_train__clap_silenceaware.npz --backend laion_clap --model HTSAT-tiny --device cuda --silence-rms 0.0001
+python "src\extract embeddings\extract_audio_embeddings.py" --videos stimuli_test --out work\emb_test__clap_silenceaware.npz --backend laion_clap --model HTSAT-tiny --device cuda --silence-rms 0.0001
+python -m src.xsubj.train --config configs/xsubj.yaml --video-emb work\emb_train__clip-vitb32-layers6-12.npz work\emb_test__clip-vitb32-layers6-12.npz work\emb_train__videomae.npz work\emb_test__videomae.npz work\emb_train__clap_silenceaware.npz work\emb_test__clap_silenceaware.npz --set model.gated_fusion=true model.fusion_dim=512 --out gated_clip_layers_videomae_clap_20261017
+python -m src.xsubj.submit --config configs/xsubj.yaml --model encoder --checkpoint models\xsubj\checkpoints\gated_clip_layers_videomae_clap_20261017\model.pt --subjects sub-01 sub-02 sub-03 sub-04 --out work\submissions_gated_clip_layers_videomae_clap_20261017 --csls
+```
+
+The gate and separate visual/audio projections are trained jointly with the
+EEG encoder. At submission time, the checkpoint transforms the candidate
+features with the same learned gate. Gated fusion requires distinct visual
+and audio archives; legacy pre-concatenated CLIP+CLAP archives cannot be split
+reliably and are rejected for this mode. `model.fusion_dim` sets the shared
+retrieval-space size. This is an opt-in alternative to the default equal-norm
+feature concatenation. In the first silence-filtered gated run, mean CSLS
+top-1/top-5 on sub-01..04 was 8.82%/26.72%, below the
+`rankall_no_xsubjavg_20261017` reference at 12.25%/35.54%. Keep the reference
+checkpoint as the current best; gated fusion is experimental and should not
+replace it without a repeatable gain.
 
 ## 4. Train the final EEG encoder
 

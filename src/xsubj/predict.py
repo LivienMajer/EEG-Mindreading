@@ -18,7 +18,7 @@ import numpy as np
 
 from src.xsubj.eeg.preprocess import load_preprocessed
 from src.xsubj.metrics import retrieval_metrics
-from src.xsubj.train import embed, load_checkpoint
+from src.xsubj.train import embed, load_checkpoint, target_embeddings
 from src.xsubj.utils import get_device, load_config, resolve
 from src.xsubj.video.embeddings import load_video_bank
 
@@ -37,8 +37,9 @@ def main():
     import torch
     cfg = ck_cfg or torch.load(args.checkpoint, map_location="cpu", weights_only=False)["cfg"]
     bank = load_video_bank(cfg)
-    model, ck = load_checkpoint(args.checkpoint, bank.dim)
+    model, ck = load_checkpoint(args.checkpoint, bank)
     model.to(device)
+    candidate_embeddings = target_embeddings(model, bank, device)
     cand = json.loads(Path(args.candidates).read_text()) if args.candidates else {}
     lut = {s: i for i, s in enumerate(ck["subject_list"])}
 
@@ -52,11 +53,14 @@ def main():
             pred = embed(model, d.X, subj, device)
             for i, z in enumerate(pred):
                 ids = np.array(cand[d.subject][i]) if d.subject in cand else bank.ids
-                order = np.argsort(-(bank.emb[bank.lookup(ids)] @ z))
+                order = np.argsort(
+                    -(candidate_embeddings[bank.lookup(ids)] @ z))
                 w.writerow([d.subject, i, ids[order[0]], " ".join(ids[order[: args.top]]),
                             d.video_id[i] if d.video_id is not None else ""])
             if d.video_id is not None:
-                m = retrieval_metrics(pred, bank.lookup(d.video_id), bank.emb, cfg["eval"]["k_candidates"])
+                m = retrieval_metrics(
+                    pred, bank.lookup(d.video_id), candidate_embeddings,
+                    cfg["eval"]["k_candidates"])
                 seen = "seen" if d.subject in lut else "unseen"
                 print(d.subject, f"({seen})", "  ".join(f"{k}={v:.3f}" for k, v in m.items() if k.startswith("top1")))
     print(f"saved {out}")

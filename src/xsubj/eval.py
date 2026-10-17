@@ -22,22 +22,35 @@ import yaml
 
 from src.xsubj.eeg.dataset import Trials
 from src.xsubj.eeg.preprocess import load_preprocessed
-from src.xsubj.metrics import average_repeats, permutation_test, retrieval_metrics
+from src.xsubj.metrics import (
+    average_repeats,
+    permutation_test,
+    retrieval_metrics,
+)
 from src.xsubj.nets.ridge import RidgeDecoder
-from src.xsubj.train import embed, train_split
+from src.xsubj.train import embed, target_embeddings, train_split
 from src.xsubj.utils import get_device, load_config, resolve, seed_everything
 from src.xsubj.video.embeddings import load_video_bank
 
 
-def evaluate(pred, test: Trials, bank, e: dict, seed: int) -> dict:
+def evaluate(
+    pred, test: Trials, bank, e: dict, seed: int,
+    candidate_embeddings: np.ndarray | None = None,
+) -> dict:
     res = {}
+    embeddings = candidate_embeddings if candidate_embeddings is not None else bank.emb
     for name, cn in (("raw", False), ("colnorm", True)):
-        res[name] = retrieval_metrics(pred, test.y, bank.emb, e["k_candidates"], seed, col_norm=cn)
-        res[name]["permutation"] = permutation_test(pred, test.y, bank.emb, e["n_permutations"], seed, cn)
+        res[name] = retrieval_metrics(pred, test.y, embeddings, e["k_candidates"], seed, col_norm=cn)
+        res[name]["permutation"] = permutation_test(pred, test.y, embeddings, e["n_permutations"], seed, cn)
+    csls_k = e.get("csls_k", 10)
+    res["csls"] = retrieval_metrics(
+        pred, test.y, embeddings, e["k_candidates"], seed, csls_k=csls_k)
+    res["csls"]["permutation"] = permutation_test(
+        pred, test.y, embeddings, e["n_permutations"], seed, csls_k=csls_k)
     if e["average_repeats"]:
         p, y, _ = average_repeats(pred, test.y, test.subject)
         if len(y) < len(test.y):
-            res["repeats_averaged"] = retrieval_metrics(p, y, bank.emb, e["k_candidates"], seed)
+            res["repeats_averaged"] = retrieval_metrics(p, y, embeddings, e["k_candidates"], seed)
     return res
 
 
@@ -70,6 +83,10 @@ def main():
         for k in path:
             node = node[k]
         node[last] = yaml.safe_load(value)
+    if cfg["model"].get("gated_fusion", False) and "ridge" in args.models:
+        raise SystemExit(
+            "Gated fusion changes the target embedding space; run with "
+            "--models encoder (ridge cannot share this feature space).")
     if args.epochs:
         cfg["train"]["epochs"] = args.epochs
     if args.video_emb:
@@ -97,10 +114,13 @@ def main():
         if "encoder" in args.models:
             seed_everything(cfg["seed"])
             model, subject_list = train_split(cfg, data, bank, holdout)
+            candidate_emb = target_embeddings(model, bank, get_device())
             for d in tests:
                 test = Trials([d], bank, subject_list)
                 pred = embed(model, test.X, test.subj, get_device())
-                results["encoder"][d.subject] = evaluate(pred, test, bank, cfg["eval"], cfg["seed"])
+                results["encoder"][d.subject] = evaluate(
+                    pred, test, bank, cfg["eval"], cfg["seed"],
+                    candidate_embeddings=candidate_emb)
                 print(f"encoder {d.subject}", _short(results["encoder"][d.subject]))
                 if "ensemble" in results:  # average of both predicted CLIP vectors
                     ens = preds[("ridge", d.subject)] + pred
@@ -111,7 +131,7 @@ def main():
     print(f"\n=== {args.mode}: mean over scored subjects ===")
     for m, res in results.items():
         per_subj = dict(res)
-        for name in ("raw", "colnorm"):
+        for name in ("raw", "colnorm", "csls"):
             keys = [k for k in next(iter(per_subj.values()))[name] if k.startswith(("top", "chance", "mean_rank"))]
             mean = {k: float(np.mean([r[name][k] for r in per_subj.values()])) for k in keys}
             results[m][f"_mean_{name}"] = mean

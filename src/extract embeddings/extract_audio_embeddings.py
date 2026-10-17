@@ -99,10 +99,13 @@ def extract_embeddings(
     device: str | None = None,
     limit: int | None = None,
     overwrite: bool = False,
+    silence_rms: float = 1e-4,
 ) -> None:
-    """Encode all videos as normalized audio embeddings."""
+    """Encode non-silent audio; store zero vectors for silent or absent tracks."""
     if limit is not None and limit < 1:
         raise ValueError("--limit must be at least 1")
+    if not np.isfinite(silence_rms) or silence_rms < 0:
+        raise ValueError("--silence-rms must be a finite non-negative value")
     if output_path.exists() and not overwrite:
         raise FileExistsError(
             f"Output already exists: {output_path}. Use --overwrite to replace it.")
@@ -135,15 +138,25 @@ def extract_embeddings(
 
     embeddings_by_id = {}
     missing_audio_ids = []
+    silent_audio_ids = []
+    rms_by_id = {}
     embedding_dim = None
     for video_path in tqdm(videos, desc="Encoding audio"):
+        video_id = int(video_path.stem)
         try:
             waveform = decode_audio(video_path)
         except NoAudioStreamError:
-            missing_audio_ids.append(int(video_path.stem))
+            missing_audio_ids.append(video_id)
+            rms_by_id[video_id] = 0.0
             continue
         except Exception as exc:
             raise RuntimeError(f"Failed to decode audio from {video_path}") from exc
+
+        rms = float(np.sqrt(np.mean(np.square(waveform, dtype=np.float64))))
+        rms_by_id[video_id] = rms
+        if rms < silence_rms:
+            silent_audio_ids.append(video_id)
+            continue
 
         try:
             embedding = np.asarray(encoder.encode(waveform), dtype=np.float32)
@@ -158,17 +171,33 @@ def extract_embeddings(
                 f"Audio backend returned non-finite values for {video_path}")
         embedding = F.normalize(torch.from_numpy(embedding), dim=0).numpy()
         embedding_dim = embedding.size
-        embeddings_by_id[int(video_path.stem)] = embedding
+        embeddings_by_id[video_id] = embedding
 
     if embedding_dim is None:
-        raise ValueError(
-            f"No audio streams found in videos under {video_dir}; "
-            "cannot determine the embedding dimension.")
+        if not (silent_audio_ids or missing_audio_ids):
+            raise ValueError(
+                f"No audio streams found in videos under {video_dir}; "
+                "cannot determine the embedding dimension.")
+        try:
+            probe = np.asarray(
+                encoder.encode(np.zeros(SAMPLE_RATE, dtype=np.float32)),
+                dtype=np.float32)
+        except Exception as exc:
+            raise RuntimeError(
+                "Failed to infer the audio embedding dimension from silence") from exc
+        if probe.ndim != 1 or probe.size == 0 or not np.isfinite(probe).all():
+            raise ValueError(
+                f"Audio backend returned an invalid silence probe shape/value: "
+                f"{probe.shape}")
+        embedding_dim = probe.size
 
     embeddings = np.stack([
         embeddings_by_id.get(video_id, np.zeros(embedding_dim, dtype=np.float32))
         for video_id in video_ids
     ])
+    audio_rms = np.asarray(
+        [rms_by_id.get(video_id, 0.0) for video_id in video_ids],
+        dtype=np.float32)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
         output_path,
@@ -178,13 +207,21 @@ def extract_embeddings(
         model=np.asarray(encoder.model_name),
         checkpoint=np.asarray(encoder.checkpoint),
         sample_rate=np.asarray(SAMPLE_RATE, dtype=np.int32),
+        audio_rms=audio_rms,
+        silence_rms_threshold=np.asarray(silence_rms, dtype=np.float32),
         missing_audio_video_ids=np.asarray(missing_audio_ids, dtype=np.int32),
+        silent_audio_video_ids=np.asarray(silent_audio_ids, dtype=np.int32),
     )
     print(f"Saved {len(video_ids)} embeddings (dim {embedding_dim})")
     if missing_audio_ids:
         print(
             f"WARNING: {len(missing_audio_ids)} videos have no audio stream; "
             f"saved zero vectors for IDs: {', '.join(map(str, missing_audio_ids))}")
+    if silent_audio_ids:
+        print(
+            f"Silence filter: {len(silent_audio_ids)} tracks below RMS "
+            f"{silence_rms:g}; saved zero vectors for IDs: "
+            f"{', '.join(map(str, silent_audio_ids))}")
     print(f"Output: {output_path}")
 
 
@@ -205,6 +242,8 @@ def main() -> None:
     parser.add_argument("--device", choices=("cuda", "cpu"))
     parser.add_argument("--limit", type=int,
                         help="Only encode the first N videos (smoke testing)")
+    parser.add_argument("--silence-rms", type=float, default=1e-4,
+                        help="Tracks below this normalized waveform RMS become zero vectors (default: 1e-4)")
     parser.add_argument("--overwrite", action="store_true",
                         help="Replace the output file if it already exists")
     args = parser.parse_args()
@@ -217,6 +256,7 @@ def main() -> None:
         device=args.device,
         limit=args.limit,
         overwrite=args.overwrite,
+        silence_rms=args.silence_rms,
     )
 
 

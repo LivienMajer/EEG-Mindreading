@@ -48,6 +48,8 @@ class EEGEncoder(nn.Module):
         temperature: float = 0.07,
         fs: float = 128.0,
         tmin: float = 0.0,
+        visual_dim: int | None = None,
+        audio_dim: int | None = None,
     ):
         super().__init__()
         del fs, tmin
@@ -112,12 +114,72 @@ class EEGEncoder(nn.Module):
                 f"Unknown EEG model architecture {arch!r}; "
                 "choose eegnet, shallow, or mlp")
 
-        self.project = nn.Linear(hidden_dim, embed_dim)
+        self.dual_projection = bool(cfg.get("dual_projection", False))
+        self.gated_fusion = bool(cfg.get("gated_fusion", False))
+        if self.dual_projection and self.gated_fusion:
+            raise ValueError(
+                "dual_projection and gated_fusion are separate target modes; "
+                "enable only one")
+        if self.dual_projection and embed_dim % 2:
+            raise ValueError(
+                "Dual projection requires an even embedding dimension "
+                "for equal-sized video and audio spaces")
+        if self.gated_fusion and (
+                visual_dim is None or audio_dim is None
+                or visual_dim < 1 or audio_dim < 1):
+            raise ValueError(
+                "Gated fusion requires separate visual and audio feature banks")
+        output_dim = (
+            int(cfg.get("fusion_dim", 512)) if self.gated_fusion else
+            embed_dim // 2 if self.dual_projection else embed_dim)
+        self.project = nn.Linear(hidden_dim, output_dim)
+        self.audio_project = (
+            nn.Linear(hidden_dim, output_dim) if self.dual_projection else None
+        )
+        self.target_visual_proj = (
+            nn.Linear(visual_dim, output_dim, bias=False)
+            if self.gated_fusion and visual_dim is not None else None)
+        self.target_audio_proj = (
+            nn.Linear(audio_dim, output_dim, bias=False)
+            if self.gated_fusion and audio_dim is not None else None)
+        self.gate_layer = (
+            nn.Linear(visual_dim + audio_dim, output_dim)
+            if self.gated_fusion
+            and visual_dim is not None
+            and audio_dim is not None else None)
         self.logit_scale = nn.Parameter(
             torch.tensor(math.log(1.0 / temperature), dtype=torch.float32))
 
-    def forward(self, x: torch.Tensor, subjects: torch.Tensor) -> torch.Tensor:
+    def fuse_video_embeddings(
+        self, visual: torch.Tensor, audio: torch.Tensor
+    ) -> torch.Tensor:
+        if (not self.gated_fusion or self.target_visual_proj is None
+                or self.target_audio_proj is None or self.gate_layer is None):
+            raise ValueError("Gated video fusion is not enabled")
+        gate = torch.sigmoid(self.gate_layer(torch.cat((visual, audio), dim=-1)))
+        fused = (
+            gate * self.target_visual_proj(visual)
+            + (1.0 - gate) * self.target_audio_proj(audio))
+        return F.normalize(fused, p=2, dim=-1)
+
+    def _features(self, x: torch.Tensor, subjects: torch.Tensor) -> torch.Tensor:
         if self.subject_layer is not None:
             x = self.subject_layer(x, subjects)
-        x = self.backbone(x.unsqueeze(1))
-        return F.normalize(self.project(x), dim=-1)
+        return self.backbone(x.unsqueeze(1))
+
+    def forward_modalities(
+        self, x: torch.Tensor, subjects: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        if not self.dual_projection or self.audio_project is None:
+            raise ValueError("Separate modality outputs require dual_projection")
+        features = self._features(x, subjects)
+        return (
+            F.normalize(self.project(features), dim=-1),
+            F.normalize(self.audio_project(features), dim=-1),
+        )
+
+    def forward(self, x: torch.Tensor, subjects: torch.Tensor) -> torch.Tensor:
+        if self.dual_projection:
+            video, audio = self.forward_modalities(x, subjects)
+            return F.normalize(torch.cat((video, audio), dim=-1), dim=-1)
+        return F.normalize(self.project(self._features(x, subjects)), dim=-1)
