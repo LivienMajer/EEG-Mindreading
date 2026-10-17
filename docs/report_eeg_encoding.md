@@ -135,10 +135,10 @@ Sections 1–4 used a conventional pipeline: 0.5–40 Hz band-pass, average refe
 | Low-pass 40 Hz only | 0.241 | 14.7 % | 45.8 % | 13.6 |
 | **Low-pass 40 Hz only, no average reference (chosen)** | **0.233** | **15.9 %** | **45.6 %** | **12.5** |
 | … and no Euclidean alignment | 0.269 | 12.0 % | 38.5 % | 14.9 |
-| … with per-trial detrending | 0.235 | 15.4 % | 42.6 % | 14.4 |
-| … with per-trial demeaning | 0.238 | 14.5 % | 45.3 % | 14.1 |
+| … with per-trial detrending | 0.228 | 15.9 % | 43.9 % | 13.1 |
+| … with per-trial demeaning | 0.231 | 14.7 % | 44.9 % | 13.0 |
 
-**Finding:** every high-pass filter hurts compared with none. The effect is not monotonic in the cut-off: 0.1 Hz is worse than 0.5–1 Hz, which suggests filter edge transients on the short 3 s epochs, rather than a pure loss of slow signal (not tested further). Average referencing also hurts, while Euclidean alignment remains clearly useful. The chosen variant is best on both the cross-validation and the development test sets.
+**Finding:** every high-pass filter hurts compared with none. The effect is not monotonic in the cut-off: 0.1 Hz is worse than 0.5–1 Hz, which suggests filter edge transients on the short 3 s epochs, rather than a pure loss of slow signal (not tested further). The low-pass cut-off itself (12–40 Hz), resampling to 200 Hz, scaling, clipping and keeping the mean response make no difference. Average referencing hurts. Euclidean alignment matters in the chosen setup (removing it: CV 0.233 → 0.269). Adding per-trial detrending or demeaning is marginally better on cross-validation (0.228 / 0.231 vs 0.233), but worse on the development test sets (mean rank 13.1 / 13.0 vs 12.5). The three are within noise of each other, and the submission uses the simplest one.
 
 All nine encoders were then retrained with the chosen preprocessing (same architectures, seeds and training settings). Against the same ensemble with the earlier preprocessing, paired on the same 408 recordings:
 
