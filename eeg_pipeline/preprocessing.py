@@ -48,6 +48,11 @@ import pandas as pd
 from scipy import signal
 
 SFREQ = 500
+# Rows of every trial, from the organizers; order verified with check_channel_order.
+# All parietal/occipital (10-10 system). Organizer preprocessing before release:
+# band-pass 0.1-40 Hz, blink components removed, 1000 -> 500 Hz.
+CHANNELS = ['Pz', 'P3', 'P7', 'O1', 'Oz', 'O2', 'P4', 'P8', 'P1', 'P5',
+            'PO7', 'PO3', 'POz', 'PO4', 'PO8', 'P6', 'P2']
 
 DEFAULT_CONFIG = {
     'sfreq': SFREQ,

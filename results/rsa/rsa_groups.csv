@@ -1,0 +1,73 @@
+group,channels,model,peak_ms,peak_r,significant_fdr_at_peak
+occipital,O1 Oz O2 POz,low_luminance,85,0.01100,0
+occipital,O1 Oz O2 POz,low_contrast,85,0.02030,0
+occipital,O1 Oz O2 POz,low_saturation,265,0.00480,0
+occipital,O1 Oz O2 POz,low_edges,85,0.02805,0
+occipital,O1 Oz O2 POz,low_motion,105,0.00757,0
+occipital,O1 Oz O2 POz,low_loudness,125,0.02644,1
+occipital,O1 Oz O2 POz,alexnet_conv1,85,0.03495,1
+occipital,O1 Oz O2 POz,alexnet_conv2,85,0.03834,1
+occipital,O1 Oz O2 POz,alexnet_conv3,85,0.03755,1
+occipital,O1 Oz O2 POz,alexnet_conv4,85,0.03171,1
+occipital,O1 Oz O2 POz,alexnet_conv5,85,0.02700,1
+occipital,O1 Oz O2 POz,alexnet_fc6,85,0.02837,1
+occipital,O1 Oz O2 POz,alexnet_fc7,85,0.02804,1
+occipital,O1 Oz O2 POz,clip_vitb32_daniel,205,0.01681,1
+occipital,O1 Oz O2 POz,videomae_l4,85,0.02307,1
+occipital,O1 Oz O2 POz,videomae_l8,225,0.02368,1
+occipital,O1 Oz O2 POz,videomae_l12,85,0.00927,1
+occipital,O1 Oz O2 POz,clap_audio,105,0.01895,1
+left_lateral,P7 P5 PO7 P3,low_luminance,205,0.00495,0
+left_lateral,P7 P5 PO7 P3,low_contrast,105,0.01128,0
+left_lateral,P7 P5 PO7 P3,low_saturation,285,0.00509,0
+left_lateral,P7 P5 PO7 P3,low_edges,145,0.01473,0
+left_lateral,P7 P5 PO7 P3,low_motion,105,0.00758,0
+left_lateral,P7 P5 PO7 P3,low_loudness,125,0.02904,0
+left_lateral,P7 P5 PO7 P3,alexnet_conv1,105,0.01741,1
+left_lateral,P7 P5 PO7 P3,alexnet_conv2,105,0.01804,1
+left_lateral,P7 P5 PO7 P3,alexnet_conv3,205,0.02019,1
+left_lateral,P7 P5 PO7 P3,alexnet_conv4,205,0.02244,1
+left_lateral,P7 P5 PO7 P3,alexnet_conv5,205,0.02260,1
+left_lateral,P7 P5 PO7 P3,alexnet_fc6,205,0.02377,1
+left_lateral,P7 P5 PO7 P3,alexnet_fc7,205,0.02321,1
+left_lateral,P7 P5 PO7 P3,clip_vitb32_daniel,205,0.01729,1
+left_lateral,P7 P5 PO7 P3,videomae_l4,205,0.01621,1
+left_lateral,P7 P5 PO7 P3,videomae_l8,205,0.02110,1
+left_lateral,P7 P5 PO7 P3,videomae_l12,165,0.00892,1
+left_lateral,P7 P5 PO7 P3,clap_audio,105,0.01781,1
+right_lateral,P8 P6 PO8 P4,low_luminance,205,0.00530,0
+right_lateral,P8 P6 PO8 P4,low_contrast,105,0.01473,0
+right_lateral,P8 P6 PO8 P4,low_saturation,205,0.00481,0
+right_lateral,P8 P6 PO8 P4,low_edges,165,0.01259,0
+right_lateral,P8 P6 PO8 P4,low_motion,145,0.00556,0
+right_lateral,P8 P6 PO8 P4,low_loudness,105,0.02802,1
+right_lateral,P8 P6 PO8 P4,alexnet_conv1,105,0.01609,1
+right_lateral,P8 P6 PO8 P4,alexnet_conv2,205,0.01826,1
+right_lateral,P8 P6 PO8 P4,alexnet_conv3,205,0.02143,1
+right_lateral,P8 P6 PO8 P4,alexnet_conv4,205,0.02512,1
+right_lateral,P8 P6 PO8 P4,alexnet_conv5,205,0.02437,1
+right_lateral,P8 P6 PO8 P4,alexnet_fc6,205,0.02652,1
+right_lateral,P8 P6 PO8 P4,alexnet_fc7,205,0.02575,1
+right_lateral,P8 P6 PO8 P4,clip_vitb32_daniel,225,0.01956,1
+right_lateral,P8 P6 PO8 P4,videomae_l4,205,0.01698,1
+right_lateral,P8 P6 PO8 P4,videomae_l8,225,0.02479,1
+right_lateral,P8 P6 PO8 P4,videomae_l12,165,0.00784,0
+right_lateral,P8 P6 PO8 P4,clap_audio,105,0.02008,1
+midline_parietal,Pz P1 P2 PO3 PO4,low_luminance,85,0.00621,0
+midline_parietal,Pz P1 P2 PO3 PO4,low_contrast,105,0.01299,0
+midline_parietal,Pz P1 P2 PO3 PO4,low_saturation,245,0.00482,0
+midline_parietal,Pz P1 P2 PO3 PO4,low_edges,85,0.01194,0
+midline_parietal,Pz P1 P2 PO3 PO4,low_motion,145,0.00481,0
+midline_parietal,Pz P1 P2 PO3 PO4,low_loudness,125,0.01585,1
+midline_parietal,Pz P1 P2 PO3 PO4,alexnet_conv1,105,0.02169,1
+midline_parietal,Pz P1 P2 PO3 PO4,alexnet_conv2,105,0.02115,1
+midline_parietal,Pz P1 P2 PO3 PO4,alexnet_conv3,105,0.02087,1
+midline_parietal,Pz P1 P2 PO3 PO4,alexnet_conv4,225,0.02004,1
+midline_parietal,Pz P1 P2 PO3 PO4,alexnet_conv5,225,0.02050,1
+midline_parietal,Pz P1 P2 PO3 PO4,alexnet_fc6,225,0.02185,1
+midline_parietal,Pz P1 P2 PO3 PO4,alexnet_fc7,225,0.02119,1
+midline_parietal,Pz P1 P2 PO3 PO4,clip_vitb32_daniel,225,0.01624,1
+midline_parietal,Pz P1 P2 PO3 PO4,videomae_l4,205,0.01701,1
+midline_parietal,Pz P1 P2 PO3 PO4,videomae_l8,225,0.02315,1
+midline_parietal,Pz P1 P2 PO3 PO4,videomae_l12,285,0.00720,1
+midline_parietal,Pz P1 P2 PO3 PO4,clap_audio,245,0.01280,1
