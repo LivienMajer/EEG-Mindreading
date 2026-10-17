@@ -297,8 +297,11 @@ def main():
                   epochs=args.epochs, batch_size=args.batch_size,
                   temperature=args.temperature, lr=args.lr,
                   seed=args.seed, holdout=0, top1=t1, top5=t5, note="")
-        Path("work").mkdir(exist_ok=True)
+        Path("work/tst_ranked").mkdir(parents=True, exist_ok=True)
         np.save(f"work/ranked_sub{args.sub}_infonce.npy", ranked_e)
+        np.save(f"work/tst_ranked/infonce_{args.sub}_{emb_tag}_s{args.seed}.npy",
+                ranked_e)
+        np.save(f"work/tst_ranked/truth_{args.sub}_s0.npy", tst.y[order])
     else:
         print("no labels (sub-05/06): submission file written")
         np.save(f"work/sub-{args.sub}_ranked_candidate_list.npy", ranked)

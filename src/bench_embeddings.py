@@ -216,6 +216,11 @@ def main():
         ranked = TEST_VIDEO_IDS[np.argsort(-S, axis=1)]
         truth = tst.y[order]
         results[sub] = (topk(ranked, truth, 1), topk(ranked, truth, 5))
+        # dump for rank fusion (same row convention as contrastive_pipeline tst path)
+        Path("work/tst_ranked").mkdir(parents=True, exist_ok=True)
+        emb_tag = Path(args.emb_train).stem.replace("_pooled", "")
+        np.save(f"work/tst_ranked/ridge_{sub}_{emb_tag}_s0.npy", ranked)
+        np.save(f"work/tst_ranked/truth_{sub}_s0.npy", truth)
 
     print(f"\n=== {Path(args.emb_test).name} | agg={args.agg} | window={args.window} ===")
     for sub, (t1, t5) in results.items():
