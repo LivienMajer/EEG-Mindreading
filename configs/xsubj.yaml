@@ -97,3 +97,6 @@ submit:                        # default submission: 3 equal votes = mean of the
   #   (before, with 0.5-40 Hz band-pass + average reference: 13.2% / 43.1% / 14.2;
   #    paired: rank better in 214 vs 141 recordings, p = 0.0001; top-1 47 vs 29 hits, p = 0.05)
   encoders: [all, shallow_s1, shallow_s2, shallow_s3, shallow_s4, mlp_s0, mlp_s1, mlp_s2, eegnet_s0]
+  # 4th vote: CLAP audio ridge (pooled + per-subject), added as S_image + audio_weight * S_audio.
+  audio_emb: models/xsubj/features/clap.npz
+  audio_weight: 0.3

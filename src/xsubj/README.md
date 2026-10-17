@@ -8,7 +8,6 @@ video ──► frozen CLIP ViT-B-32 (open_clip 3.3.0, ViT-B-32 / openai) ──
 EEG ──► preprocessing ──► 3 votes: 9 encoders | pooled ridge | per-subject ridge ─► 512-d ─┘
 ```
 
-Development result (test splits of sub-01 to sub-04, 102 candidates): **top-1 17.6 %, top-5 47.8 %, mean rank 11.5** (chance 1.0 % / 4.9 % / 51.5). The full analysis is in [docs/report_eeg_encoding.md](../../docs/report_eeg_encoding.md).
 
 ## Setup (Python 3.11)
 
@@ -70,7 +69,7 @@ The training command of each encoder is listed in the `submit:` section of `conf
 - **Preprocessing** (`eeg/preprocess.py`), per subject and split, label-free: 40 Hz low-pass (no high-pass, no average reference: both cost accuracy, see `sweep_preprocess.py`), 0–1 s window, 100 Hz, removal of the split's mean response (the test recordings' mean response is inverted relative to training), scaling, Euclidean alignment.
 - **EEG features for ridge** (`nets/ridge.py`): amplitude of every sample from 50 to 600 ms, 17 channels → 935 features. Band power and covariance features were tested and carry no information.
 - **Neural encoders** (`nets/encoders.py`, `train.py`): ShallowConvNet, EEGNet and MLP with a per-subject channel-mixing layer, trained with InfoNCE against the CLIP embeddings of all training videos.
-- **Submission ensemble** (`submit.py`): three equal votes (mean of 9 encoders, pooled ridge, per-subject ridge), then each candidate's similarities are z-scored over the subject's test recordings before ranking.
+- **Submission ensemble** (`submit.py`): three equal votes in CLIP space (mean of 9 encoders, pooled ridge, per-subject ridge) plus an audio vote (ridge into the CLAP space of each video's sound track, weight 0.3); each candidate's similarities are z-scored over the subject's test recordings before ranking.
 - **Validation** (`eval.py`, `metrics.py`): train on the training splits of all six subjects, score the test splits of sub-01..04 among 102 candidates; top-1, top-5, mean rank, permutation test. Test splits are never trained on.
 
 ## Module map

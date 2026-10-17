@@ -1,6 +1,6 @@
 # EEG encoding
 
-This section covers the EEG side of the pipeline: how a preprocessed EEG trial becomes a vector that can be compared with the candidate videos. The video side is fixed here: every video is a frozen CLIP ViT-B-32 embedding (open_clip 3.3.0, `ViT-B-32` / `openai`, mean over 8 frames). The EEG encoder maps each trial into that 512-dimensional CLIP space, and the 102 candidates are ranked by cosine similarity.
+This section covers the EEG side of the pipeline: how a preprocessed EEG trial becomes a vector that can be compared with the candidate videos. The video side is fixed here: every video is a frozen CLIP ViT-B-32 embedding (open_clip 3.3.0, `ViT-B-32` / `openai`, mean over 8 frames). The EEG encoder maps each trial into that 512-dimensional CLIP space, and the 102 candidates are ranked by cosine similarity. Section 6 adds a second, weaker target: the CLAP embedding of each video's sound track.
 
 ```
 video ──► frozen CLIP ViT-B-32 ──────────────────────────────► 512-d vector ─┐
@@ -8,14 +8,16 @@ video ──► frozen CLIP ViT-B-32 ──────────────�
 EEG ──► preprocessing ──► EEG encoder (trained, this section) ─► 512-d vector ─┘
 ```
 
-**Final result** (development test sets of sub-01 to sub-04, 102 candidates each):
+**Final result** (102 candidates per subject; top-1 / top-5 / mean rank):
 
-| | Top-1 | Top-5 | Mean rank |
-|---|---|---|---|
-| **Submission: 3-vote ensemble** | **17.6 %** | **47.8 %** | **11.5** |
-| Same ensemble with the earlier preprocessing (band-pass + average reference) | 13.2 % | 43.1 % | 14.2 |
-| Organisers' baseline (AlexNet forward model, sub-01 only) | 3.9 % | 11.8 % | – |
-| Chance | 1.0 % | 4.9 % | 51.5 |
+| | Dev: sub-01 to sub-04 |
+|---|---|
+| **Submission: 3 image votes + audio vote** | **19.9 % / 48.8 % / 10.8** |
+| 3 image votes only | 17.6 % / 47.8 % / 11.5 |
+| 3 image votes, earlier preprocessing (band-pass + average reference) | 13.2 % / 43.1 % / 14.2 |
+| Organisers' baseline (AlexNet forward model, sub-01 only) | 3.9 % / 11.8 % / – |
+| Chance | 1.0 % / 4.9 % / 51.5 |
+
 
 ## Evaluation protocol
 
@@ -148,18 +150,51 @@ All nine encoders were then retrained with the chosen preprocessing (same archit
 | **Low-pass only, no average reference** | **17.6 %** | **47.8 %** | **11.5** |
 | Paired test | 47 vs 29 hits, p = 0.050 | 58 vs 39 hits, p = 0.067 | better in 214, worse in 141, p = 0.0001 |
 
-## 6. Final configuration
+## 6. Video targets and audio
 
-The submission combines three votes with equal weight, then applies per-candidate normalisation:
+All comparisons in this section use the two ridge votes (pooled + per-subject) unless stated otherwise, paired against the CLIP ViT-B/32 target (mean over 8 frames: CV 0.233, dev 15.9 % / 45.6 % / 12.5).
+
+**Which frames?** The decoding curve shows that only the onset response carries information, so an embedding of the video's beginning might match the EEG better than the mean over 3 s.
+
+| Video target (CLIP B/32) | CV rank | Top-1 | Top-5 | Mean rank | Paired rank better / worse |
+|---|---|---|---|---|---|
+| Mean of 8 frames (used) | 0.233 | 15.9 % | 45.6 % | 12.5 | – |
+| First frame only | 0.235 | 14.7 % | 45.3 % | 13.6 | 152 / 166 (p = 0.47) |
+| First half (frames 1–4) | 0.231 | 16.9 % | 46.1 % | 12.8 | 140 / 134 (p = 0.76) |
+| Second half (frames 5–8) | 0.240 | 15.2 % | 43.1 % | 13.0 | 113 / 170 (p = 0.001) |
+| Last frame only | 0.251 | 11.5 % | 40.9 % | 13.7 | 124 / 203 (p < 0.001) |
+| Low-level image statistics | 0.361 | 4.4 % | 17.6 % | 30.2 | 106 / 299 (p < 0.001) |
+
+Late frames are significantly worse than early ones, consistent with an onset response. Early frames are only as good as the mean, though: frames within a 3 s clip are very similar (median cosine of first vs last frame 0.92), and the mean is less noisy. Low-level statistics (thumbnail, colour, contrast, edges, motion) are far weaker than CLIP.
+
+**Audio.** The videos were shown with sound. A ridge from EEG to the CLAP embedding of each sound track (`transformers` `laion/clap-htsat-unfused`, `src/xsubj/video/foundation_features.py`, `src/xsubj/audio_member.py`) decodes the video from audio alone at 4.9 % / 21.1 % / 25.7, five times chance. Concatenating CLAP to the CLIP target does not help (CLIP + CLAP: 15.0 % / 42.2 % / 14.6): the weaker audio signal dilutes the image signal. As a **separate vote**, `S = S_image + w · S_audio` (both per-candidate normalised), it does help. Cross-validation over training videos picks w = 0.5. The electrodes mostly cover visual cortex, which fits a real but weak audio signal.
+
+
+| Votes | Dev top-1 / top-5 / rank |
+|---|---|
+| Pooled ridge P | 12.0 % / 35.0 % / 15.4 |
+| Per-subject ridge S | 13.2 % / 42.4 % / 13.9 |
+| Encoders E | 15.2 % / 38.2 % / 14.9 |
+| E + P + S | 17.6 % / 47.8 % / 11.5 |
+| E + P + S, no per-candidate normalisation | 17.2 % / 43.6 % / 13.1 |
+| E + P + S + audio, w = 0.5 (CV choice) | 18.9 % / 46.8 % / 11.2 |
+| **E + P + S + audio, w = 0.3 (submission)** | **19.9 % / 48.8 % / 10.8** |
+| Audio only | 4.9 % / 21.1 % / 25.7 |
+
+
+## 7. Final configuration
+
+The submission sums three image votes with equal weight in CLIP space and adds the audio vote, with per-candidate normalisation:
 
 1. **9 neural encoders** (5× ShallowConvNet, 3× MLP, 1× EEGNet), averaged into one vote
 2. **Pooled ridge** on all six subjects' training splits
 3. **Per-subject ridge** on the subject's own training split
+4. **Audio ridge** (pooled + per-subject) into CLAP space, weight 0.3
 
-| Development test | sub-01 | sub-02 | sub-03 | sub-04 | Mean |
+| | sub-01 | sub-02 | sub-03 | sub-04 | Dev mean |
 |---|---|---|---|---|---|
-| Top-1 | 18.6 % | 21.6 % | 12.7 % | 17.6 % | **17.6 %** |
-| Top-5 | 47.1 % | 49.0 % | 44.1 % | 51.0 % | **47.8 %** |
+| Top-1 | 19.6 % | 18.6 % | 18.6 % | 22.5 % | **19.9 %** |
+| Top-5 | 50.0 % | 50.0 % | 49.0 % | 46.1 % | **48.8 %** |
 
 Preprocessing: 40 Hz low-pass (no high-pass), no average reference, 0–1 s window, 100 Hz, removal of each split's mean response, scaling, clipping at ±6 SD, Euclidean alignment (all label-free, per subject and split). Against the earlier ridge + 9 encoders submission, adding the per-subject ridge improved top-5 and mean rank significantly; the preprocessing change then improved the mean rank significantly again (section 5).
 
@@ -170,14 +205,17 @@ python -m src.xsubj.submit                    # submission files for sub-01..06,
 python -m src.xsubj.eval --models ridge       # pooled ridge, official protocol
 python -m src.xsubj.sweep_features            # feature sweep (add --tmax 3.0 --curve for the decoding curve)
 python -m src.xsubj.sweep_preprocess          # preprocessing sweep (section 5)
+python -m src.xsubj.video.foundation_features --model clap --stim <stimuli_train> <stimuli_test> \
+    --out models/xsubj/features/clap         # CLAP audio embeddings (versioned already)
+python -m src.xsubj.audio_member              # audio vote as a megafusion member (ranking files)
 ```
+
 
 The training commands for each encoder are listed under `submit:` in `configs/xsubj.yaml`.
 
 ## Limitations and failure cases
 
 - **Small development set.** 408 scored recordings give about ±1.3 points of noise on top-1. Several reported differences (normalisation, ensemble size) are trends rather than proven effects; only the paired tests marked significant should be read as such.
-- **Subjects differ a lot.** Top-1 ranges from 12.7 % (sub-03) to 21.6 % (sub-02) in the final model. Sub-03 is the hardest subject in most variants.
 - **Sections 1–4 use the earlier preprocessing.** The feature, encoder and ensemble comparisons were not rerun after the preprocessing change; their absolute numbers are lower than the final ones, and only the relative conclusions carry over.
 - **Training and test recordings differ.** Training trials are single presentations, test recordings appear to be averages. The models are trained on noisier data than they are scored on, and the cross-validated weight between pooled and per-subject ridge is chosen on single trials.
 - **Only the onset response is decoded.** Nothing after about 1.1 s carries information, so any content that only appears later in a 3 s video is invisible to these models.
@@ -189,4 +227,5 @@ The training commands for each encoder are listed under `submit:` in `configs/xs
 2. At this data size, a **linear model beats deep networks**; the networks only help as additional, differently-erring ensemble members.
 3. **Subject-specific models matter more than more data**: per-subject ridge on ~950 trials beats pooled ridge on 5,650, and combining both is best.
 4. **Less preprocessing is better**: a high-pass filter and average referencing remove stimulus information; only a 40 Hz low-pass, label-free per-split normalisation and Euclidean alignment help.
-5. **Careful statistics are part of the method**: with 102 candidates and 408 recordings, paired tests and cross-validated choices separate real gains from noise.
+5. **The brain also encodes the sound**, and audio decoding transfers to new subjects better than visual decoding; as a weak separate vote it adds most where the image votes are weakest.
+6. **Careful statistics are part of the method**: with 102 candidates and 408 recordings, paired tests and cross-validated choices separate real gains from noise.

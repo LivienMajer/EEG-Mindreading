@@ -84,6 +84,8 @@ models/xsubj/checkpoints/*
 !models/xsubj/checkpoints/ridge/ridge.joblib
 !models/xsubj/checkpoints/ridge_subject/
 !models/xsubj/checkpoints/ridge_subject/ridge_subject.joblib
+!models/xsubj/checkpoints/ridge_audio/
+!models/xsubj/checkpoints/ridge_audio/ridge_audio.joblib
 !models/xsubj/features/
 models/xsubj/features/*
 !models/xsubj/features/clip_vitb32.npz

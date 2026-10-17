@@ -5,13 +5,17 @@ in its original order, holding the 102 candidate video IDs (1001..1102) from mos
 likely. Subjects with tst_stim labels (sub-01..04) are scored with the organisers' formula,
 which checks the format end to end.
 
-Default model: ensemble of three equal votes in CLIP space, ranked after per-candidate
-normalisation:
+Default model: ensemble of three equal votes in CLIP space plus a weighted audio vote:
   1. the mean of the encoders listed under `submit.encoders` (5x ShallowConvNet, 3x MLP, 1x EEGNet)
   2. pooled ridge, trained on the trn splits of all six subjects
   3. per-subject ridge, trained on the subject's own trn split only
-Dev (sub-01..04): top-1 17.6%, top-5 47.8%, mean rank 11.5 with low-pass-only preprocessing and no
-average reference (13.2% / 43.1% / 14.2 with the earlier 0.5-40 Hz band-pass + average reference).
+  4. audio: pooled + per-subject ridge into the CLAP space of each video's sound track
+Votes 1-3 are summed in CLIP space; ranking uses S_image + w * S_audio, both after per-candidate
+normalisation, with w = `submit.audio_weight` (0.3).
+                     dev sub-01..04
+  votes 1-3            17.6% / 47.8% / 11.5   (top-1 / top-5 / mean rank)
+  + audio, w = 0.3     19.9% / 48.8% / 10.8
+alone picks w = 0.5 (dev 18.9% / 46.8% / 11.2, held-out 11.3% / 33.8% / 17.8).
 
     python -m src.xsubj.submit                             # ensemble, sub-01..06
     python -m src.xsubj.submit --model ridge               # pooled ridge only (fits on all trn splits)
@@ -32,13 +36,12 @@ from src.xsubj.metrics import similarity
 from src.xsubj.nets.ridge import RidgeDecoder
 from src.xsubj.train import embed, load_checkpoint
 from src.xsubj.utils import get_device, load_config, resolve, seed_everything
-from src.xsubj.video.embeddings import load_video_bank
+from src.xsubj.video.embeddings import VideoBank, _load_file, load_video_bank
 
 CANDIDATES = np.arange(1001, 1103)
 
 
-def ranked_candidates(pred: np.ndarray, cand_emb: np.ndarray, col_norm: bool) -> np.ndarray:
-    sim = similarity(pred, cand_emb, col_norm)
+def ranked_candidates(sim: np.ndarray) -> np.ndarray:
     return CANDIDATES[np.argsort(-sim, axis=1, kind="stable")]
 
 
@@ -63,6 +66,8 @@ def main():
                     help="z-score each candidate's similarities over the subject's test recordings "
                          "(paired test on sub-01..04: top-1 21 vs 23 recordings, top-5 35 vs 26, "
                          "mean rank 17.7 -> 16.8; default on)")
+    ap.add_argument("--audio-weight", type=float, default=None,
+                    help="weight of the audio vote in the ensemble (default: submit.audio_weight; 0 = off)")
     ap.add_argument("--out", default="submissions")
     args = ap.parse_args()
 
@@ -106,6 +111,21 @@ def main():
         path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump({"models": subject_ridge, "cfg": cfg}, path)
         print(f"saved {path} ({len(subject_ridge)} subjects)")
+    w_audio = args.audio_weight if args.audio_weight is not None else cfg["submit"].get("audio_weight", 0.0)
+    if args.model != "ensemble":
+        w_audio = 0.0
+    if w_audio:  # pooled + per-subject ridge into CLAP space (src.xsubj.audio_member)
+        aud = VideoBank(*_load_file(cfg["submit"]["audio_emb"]), standardize=True)
+        trn = [d for d in data if d.split == "trn"]
+        audio_pooled = RidgeDecoder(cfg["ridge"], fs, tmin).fit(
+            np.concatenate([d.X for d in trn]), aud.emb[aud.lookup(np.concatenate([d.video_id for d in trn]))])
+        audio_subject = {d.subject: RidgeDecoder(cfg["ridge"], fs, tmin).fit(d.X, aud.emb[aud.lookup(d.video_id)])
+                         for d in trn}
+        path = resolve("models/xsubj/checkpoints/ridge_audio/ridge_audio.joblib")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        joblib.dump({"pooled": audio_pooled, "subject": audio_subject, "cfg": cfg}, path)
+        cand_audio = aud.emb[aud.lookup(CANDIDATES.astype(str))]
+        print(f"saved {path} (audio vote, weight {w_audio})")
 
     out = resolve(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -122,10 +142,14 @@ def main():
             preds.append(subject_ridge[subject].predict(d.X))
         pred = np.sum(preds, 0)
         pred /= np.linalg.norm(pred, axis=1, keepdims=True)
-        ranked = ranked_candidates(pred, cand_emb, args.col_norm).astype(np.int64)
+        sim = similarity(pred, cand_emb, args.col_norm)
+        if w_audio:
+            a = audio_pooled.predict(d.X) + audio_subject[subject].predict(d.X)
+            sim = sim + w_audio * similarity(a, cand_audio, args.col_norm)
+        ranked = ranked_candidates(sim).astype(np.int64)
         np.save(out / f"{subject}_ranked_candidate_list.npy", ranked)
-        truth = d.video_id.astype(int) if d.video_id is not None else None
-        print(f"{subject}: {check_and_score(ranked, truth)}")
+        truth, note = (d.video_id.astype(int) if d.video_id is not None else None), ""
+        print(f"{subject}: {check_and_score(ranked, truth)}{note}")
     print(f"written to {out}")
 
 
