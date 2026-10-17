@@ -16,6 +16,9 @@ Feature sets (all public, released before the hackathon):
   videomae   MCG-NJU/videomae-base-finetuned-kinetics (VideoMAE, 2022): 16 frames as one
              clip, tokens mean-pooled at transformer layers 4, 8 and 12. The only model
              here that sees motion over time.
+  vjepa2     facebook/vjepa2-vitl-fpc64-256 (V-JEPA 2 ViT-L, Meta 2025; a self-supervised video
+             "world model"): 16 frames as one clip (256 px, tubelets of 2 frames), encoder
+             tokens mean-pooled at layers 6, 12, 18 and 24 (the predictor is not used).
   audio      the 3 s sound track, mono 48 kHz. clap_audio: laion/clap-htsat-unfused (LAION
              CLAP, HTSAT, LAION-Audio-630K; the default checkpoint of laion_clap, as in
              src/extract embeddings/extract_audio_embeddings.py), repeat-padded to 10 s.
@@ -35,6 +38,8 @@ N_FRAMES_LOW = 16
 N_FRAMES_IMG = 8
 VIDEOMAE = 'MCG-NJU/videomae-base-finetuned-kinetics'
 VIDEOMAE_LAYERS = (4, 8, 12)
+VJEPA2 = 'facebook/vjepa2-vitl-fpc64-256'
+VJEPA2_LAYERS = (6, 12, 18, 24)
 CLAP = 'laion/clap-htsat-unfused'
 AUDIO_SR = 48000
 AUDIO_S = 3.0
@@ -125,6 +130,20 @@ def videomae_encoder():
     return encode
 
 
+def vjepa2_encoder():
+    from transformers import AutoModel, AutoVideoProcessor
+    proc = AutoVideoProcessor.from_pretrained(VJEPA2)
+    model = AutoModel.from_pretrained(VJEPA2).eval()
+
+    @torch.no_grad()
+    def encode(frames):
+        inputs = proc(torch.from_numpy(frames).permute(0, 3, 1, 2), return_tensors='pt')
+        out = model(**inputs, skip_predictor=True, output_hidden_states=True)
+        hs = out.hidden_states                                   # embeddings + 24 layers
+        return {f'vjepa2_l{k}': hs[k][0].mean(0).numpy() for k in VJEPA2_LAYERS}
+    return encode
+
+
 def audio_encoder():
     from transformers import ClapFeatureExtractor, ClapModel
     fe = ClapFeatureExtractor.from_pretrained(CLAP)
@@ -150,7 +169,7 @@ def main(argv=None):
     ap.add_argument('--stim_dir', required=True)
     ap.add_argument('--out_dir', default='work/rsa_features')
     ap.add_argument('--models', nargs='+', default=['lowlevel', 'alexnet', 'videomae'],
-                    choices=['lowlevel', 'alexnet', 'videomae', 'audio'])
+                    choices=['lowlevel', 'alexnet', 'videomae', 'vjepa2', 'audio'])
     ap.add_argument('--limit', type=int, default=None, help='first N videos only (timing test)')
     args = ap.parse_args(argv)
 
@@ -162,9 +181,10 @@ def main(argv=None):
 
     for model in args.models:
         encode = {'lowlevel': lowlevel, 'alexnet': alexnet_encoder,
-                  'videomae': videomae_encoder, 'audio': audio_encoder}[model]
+                  'videomae': videomae_encoder, 'vjepa2': vjepa2_encoder,
+                  'audio': audio_encoder}[model]
         encode = encode if model == 'lowlevel' else encode()
-        n = N_FRAMES_LOW if model in ('lowlevel', 'videomae') else N_FRAMES_IMG
+        n = N_FRAMES_LOW if model in ('lowlevel', 'videomae', 'vjepa2') else N_FRAMES_IMG
         load = read_audio if model == 'audio' else (lambda p: read_frames(p, n))
         feats, t0 = {}, time.time()
         for i, p in enumerate(paths):
