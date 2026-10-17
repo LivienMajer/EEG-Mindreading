@@ -44,6 +44,17 @@ Chance-Level überall: top-1 0.98%, top-5 4.9% (102 Kandidaten).
 τ-Studie (alexnet, Split 0, 1 Seed): τ=0.1 → 6.86/23.53; τ=0.05 → 4.90/28.43
 (schärferes τ verschiebt Masse von top-1 nach top-5).
 
+### FAIRER tst-Vergleich (gleiches Protokoll: tst, sub-01–04) — Kernergebnis
+| System (Zielraum clip-vitb32) | top-1 | top-5 |
+|---|---|---|
+| Ridge (forward model) | 3.43% | 13.73% |
+| **InfoNCE (EEGNet, 50–350ms)** | **11.03%** | **33.09%** |
+| → Verhältnis | **3.2×** | **2.4×** |
+
+Pro Subject InfoNCE-tst: 16.7/37.3 · 13.7/32.4 · 5.9/34.3 · 7.8/28.4.
+Zusatz: Holdout-Proxy unterschätzt tst systematisch (sub-01: Holdout ~7% vs.
+tst 16.7% top-1) — Holdout-Iteration ist konservativ, echte Zahlen tendieren höher.
+
 ### Rank-Fusion (sub-01, Holdout, Split 0)
 | System | top-1 | top-5 |
 |---|---|---|
