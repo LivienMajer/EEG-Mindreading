@@ -67,7 +67,8 @@ training trial), so validation on held-out *training* trials underestimates
 test scores.
 Variants that QC cannot decide (detrend, average reference, 1 Hz high-pass,
 per-trial z-score, shorter window) are one `--set` flag away; compare them
-on the sub-01..04 average. Rules, variants, the QC plot report and tests:
+on the sub-01..04 average. Rules, variants, the QC plot report, tests, the
+brain-vs-AI analysis and its references (RSA: Kriegeskorte et al. 2008):
 [`eeg_pipeline/README.md`](eeg_pipeline/README.md).
 
 `eeg_pipeline/` is generally universal and can be applied to any new data, given the data format is kept.

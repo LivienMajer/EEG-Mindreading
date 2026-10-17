@@ -92,7 +92,8 @@ of the same video.
 
 ## Brain vs AI: when and where does the EEG organize videos like which model?
 
-Representational similarity analysis (RSA). For every pair of videos, how different are
+Representational similarity analysis (RSA; Kriegeskorte et al. 2008), applied over time as
+in Cichy et al. (2014, 2016). For every pair of videos, how different are
 the EEG responses, and how different are the videos for a model? If the two
 dissimilarity matrices (RDMs) correlate, brain and model organize the videos the same
 way. Done in 50 ms windows (20 ms steps) over 0-800 ms, so it also shows *when*.
@@ -115,8 +116,9 @@ response removed. One RDM per subject (correlation distance over 17 channels x 5
 | `clap_audio` | audio model (sound meaning) | `laion/clap-htsat-unfused` (same weights as `laion_clap` default) |
 
 Statistics: Spearman r between model RDM and each subject's RDM, averaged over subjects;
-noise ceiling (lower bound: each subject vs the mean of the others); one-sided t-test
-over subjects, FDR over time windows. The upper ceiling bound is reported in the CSV but
+noise ceiling (Nili et al. 2014; lower bound: each subject vs the mean of the others);
+one-sided t-test over subjects, FDR over time windows (Benjamini & Hochberg 1995). Peak
+latency differences: jackknife over subjects (Miller et al. 1998). The upper ceiling bound is reported in the CSV but
 not interpreted: with single-trial RDMs it is inflated (each subject is partly compared
 with itself).
 
@@ -155,11 +157,13 @@ torchvision 0.29.1, transformers 5.20.1, av 18.1.0, decord 0.6.0, mne 1.13.2.
   first, abstract content later. Tested (`results/rsa/rsa_hierarchy_test.txt`, conv1-3
   vs conv5-fc7): early layers win the first wave and deep layers the second in 6/6
   subjects (paired t(5) = 5.60, p = 0.001); deep layers peak 120 ms later (105 vs 225
-  ms, jackknife t(5) = 5.69, p = 0.001; leave-one-subject-out 120-140 ms).
+  ms, jackknife t(5) = 5.69, p = 0.001; leave-one-subject-out 120-140 ms). The same
+  early-to-deep order over time as in MEG with images (Cichy et al. 2016).
 - **Hierarchy in space:** early layers are strongest over the occipital pole (conv2 r
   0.038 at 85 ms vs 0.018 at the lateral groups); deep layers move to the lateral
   parieto-occipital electrodes at ~205 ms (fc6 0.024-0.027), over lateral
-  occipito-temporal cortex, where objects and scenes are processed.
+  occipito-temporal cortex, where objects and scenes are processed (Grill-Spector &
+  Malach 2004).
 - **Simple visual features explain only the first wave:** edges (0.021) and contrast
   (0.019) peak at 105 ms and fade by 300 ms; luminance and motion energy are weak.
   The contrast effect is not significant once the 26 silent videos are removed, so
@@ -169,7 +173,8 @@ torchvision 0.29.1, transformers 5.20.1, av 18.1.0, decord 0.6.0, mne 1.13.2.
   model (0.012). CLIP is in between (0.026 at 265 ms). A video model that sees motion is
   not more brain-like than an image network here, and motion energy alone is weak.
 - **Sound:** loudness over time matches the brain as well as the best visual features
-  (r 0.027 at 125 ms, ~100% of the ceiling; peak at the latency of the auditory N1),
+  (r 0.027 at 125 ms, ~100% of the ceiling; peak at the latency of the auditory N1,
+  Näätänen & Picton 1987),
   and is nearly independent of all visual models (RDM overlap r <= 0.07). Robust
   without the silent videos (0.025 at 105 ms, 76%). CLAP (sound meaning) is weaker (0.020
   at 105 ms): the early response follows how loud, more than what kind of sound.
@@ -183,7 +188,7 @@ torchvision 0.29.1, transformers 5.20.1, av 18.1.0, decord 0.6.0, mne 1.13.2.
 
 Limits: 17 posterior electrodes only (no central/temporal sites); latencies of the
 earliest effects may be 10-20 ms too early if the organizers' 0.1-40 Hz filter was
-zero-phase (peaks are not affected); layers of one network are correlated with each
+zero-phase (Widmann et al. 2015; peaks are not affected); layers of one network are correlated with each
 other (overlap 0.44-0.62 between AlexNet and VideoMAE), so "which layer" comparisons
 are about the profile over time, not independent contributions.
 
@@ -225,3 +230,55 @@ python -m pytest eeg_pipeline/tests -q   # or: python eeg_pipeline/tests/test_pi
 Synthetic data built like the challenge data, and data with planted faults (dead
 channel, line noise, blink trials). Also checks that the test order is preserved
 and that the pipeline stops on NaN values.
+
+## References
+
+Methods
+
+- Kriegeskorte N, Mur M, Bandettini P (2008). Representational similarity analysis -
+  connecting the branches of systems neuroscience. *Front Syst Neurosci* 2:4.
+  doi:10.3389/neuro.06.004.2008
+- Nili H, Wingfield C, Walther A, Su L, Marslen-Wilson W, Kriegeskorte N (2014). A
+  toolbox for representational similarity analysis. *PLoS Comput Biol* 10(4):e1003553.
+  doi:10.1371/journal.pcbi.1003553 (noise ceiling)
+- Cichy RM, Pantazis D, Oliva A (2014). Resolving human object recognition in space and
+  time. *Nat Neurosci* 17:455-462. doi:10.1038/nn.3635 (time-resolved RSA)
+- Cichy RM, Khosla A, Pantazis D, Torralba A, Oliva A (2016). Comparison of deep neural
+  networks to spatio-temporal cortical dynamics of human visual object recognition
+  reveals hierarchical correspondence. *Sci Rep* 6:27755. doi:10.1038/srep27755
+- Miller J, Patterson T, Ulrich R (1998). Jackknife-based method for measuring LRP onset
+  latency differences. *Psychophysiology* 35:99-115. doi:10.1111/1469-8986.3510099
+- Benjamini Y, Hochberg Y (1995). Controlling the false discovery rate: a practical and
+  powerful approach to multiple testing. *J R Stat Soc B* 57:289-300.
+- Widmann A, Schröger E, Maess B (2015). Digital filter design for electrophysiological
+  data - a practical approach. *J Neurosci Methods* 250:34-46.
+  doi:10.1016/j.jneumeth.2014.08.002 (zero-phase filters and latencies)
+- He H, Wu D (2020). Transfer learning for brain-computer interfaces: a Euclidean space
+  data alignment approach. *IEEE Trans Biomed Eng* 67:399-410.
+  doi:10.1109/TBME.2019.2913914 (Euclidean alignment, tested in experiment/eegnet-preprocessing)
+
+Neuroscience background
+
+- Näätänen R, Picton T (1987). The N1 wave of the human electric and magnetic response
+  to sound: a review and an analysis of the component structure. *Psychophysiology*
+  24:375-425. doi:10.1111/j.1469-8986.1987.tb00311.x
+- Grill-Spector K, Malach R (2004). The human visual cortex. *Annu Rev Neurosci*
+  27:649-677. doi:10.1146/annurev.neuro.27.070203.144220
+
+Models (exact checkpoints in the RSA table above)
+
+- Krizhevsky A, Sutskever I, Hinton GE (2012). ImageNet classification with deep
+  convolutional neural networks. *NeurIPS* 25. (AlexNet)
+- Radford A et al. (2021). Learning transferable visual models from natural language
+  supervision. *ICML*, PMLR 139:8748-8763. (CLIP; weights via OpenCLIP, Ilharco G et al.
+  2021, doi:10.5281/zenodo.5143773)
+- Tong Z, Song Y, Wang J, Wang L (2022). VideoMAE: masked autoencoders are data-efficient
+  learners for self-supervised video pre-training. *NeurIPS* 35.
+- Wu Y, Chen K, Zhang T, Hui Y, Berg-Kirkpatrick T, Dubnov S (2023). Large-scale
+  contrastive language-audio pretraining with feature fusion and keyword-to-caption
+  augmentation. *ICASSP*. doi:10.1109/ICASSP49357.2023.10095969 (CLAP)
+
+Software
+
+- Gramfort A et al. (2013). MEG and EEG data analysis with MNE-Python. *Front Neurosci*
+  7:267. doi:10.3389/fnins.2013.00267 (electrode positions in check_channel_order)
