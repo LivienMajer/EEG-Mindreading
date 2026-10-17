@@ -114,6 +114,20 @@ addieren v.a. top-5 (+2.9). Per-Subject Megafusion: 19.6/45.1, 23.5/50.0,
 9.8/42.2, 12.8/39.2./sub-03-Top-1 sinkt leicht durch die Transfers (12.8→9.8),
 top-5 +5.9.
 
+### E-D: Teammate-Encoder als Member; LOO-Validierung -> FINALE GEWICHTE
+E-D solo 7.35/23.53. In der Fusion (clip 9 : alexnet 9 : ed w : ridge r :
+transfers 1:1:1): Plateau w_ed=1..9, Peak 5. DerEncoder komplementiert als
+einziger mit JOINT-Training + Subject-Layer + komplett anderem Preprocessing
+(0.5-45 Hz, Euclidean Alignment, Crop 0.05-0.6 s) — sub-03 profitiert am
+stärksten (9.8 -> 17.7 top-1).
+**Leave-one-dev-subject-out** (Gewichte pro Fold NUR auf den 3 anderen Devs
+gesucht, dann am gehaltenen gemessen; Grid w_ed {1,3,5,7,9} x w_ridge {1,2}):
+jeder Fold wählt unabhaengig 9:9:5:2:1:1:1; held-out mean **22.30/48.28** vs
+oracle 21.57/49.02 -> kein Selection-Bias, Gewichte sitzen auf dem Plateau.
+FINALE SUBMISSION-GEWICHTE: 9:9:5:2:1:1:1. LOO pro Subject: 23.5/53.9,
+25.5/50.0, 19.6/42.2, 20.6/47.1 — Subjekt-Aehnlichkeit macht ±3pp aus; fuer
+sub-05/06 also 17-25% top-1 zu erwarten (ehrliche Spanne).
+
 ### Rank-Fusion (sub-01, Holdout, Split 0)
 | System | top-1 | top-5 |
 |---|---|---|
