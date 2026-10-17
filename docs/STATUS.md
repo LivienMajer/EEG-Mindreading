@@ -128,6 +128,24 @@ FINALE SUBMISSION-GEWICHTE: 9:9:5:2:1:1:1. LOO pro Subject: 23.5/53.9,
 25.5/50.0, 19.6/42.2, 20.6/47.1 — Subjekt-Aehnlichkeit macht ±3pp aus; fuer
 sub-05/06 also 17-25% top-1 zu erwarten (ehrliche Spanne).
 
+### SUBMISSIONS ERSTELLT (2026-10-17)
+`src/make_submission.py` baut sub-05/06 aus 8 Mitgliedern (Gewichte
+9:9:5:2:1:1:1:1 — das 4. Transfer bekommt Bandbreiten-Gewicht 1 wie in der
+LOO-Logik): eigener clip-InfoNCE, eigener alexnet-InfoNCE (beide auf eigenem
+trn, trainiert in der ehemals laufenden Kette), E-D-Teammate-Encoder
+(original order dumps), own ridge (bench-exakt repliziert, original order),
+4 Transfer-Rankings aus den geladenen Dev-Checkpoints (Original-order, durch
+`rank_candidates` input-order, kein argsort). Output:
+`submissions/sub-{05,06}_ranked_candidate_list.npy`, (102,102) int64,
+Original-tst.npy-Reihenfolge.
+Validierung: (1) `validate_submission.py` ALL OK (Format), (2) Bit-Exaktheit
+der Checkpoint-Maschinerie vs Probe-Dumps (tr01->te03 identisch),
+(3) Bit-Exaktheit ridge vs bench (sub-01), (4) re-fusion aus Member-Dumps
+== gespeicherte Datei, (5) Permutations-Zeilen, ID-Bereiche. Die drei
+Solo-Rankings `work/sub-XX_ranked_candidate_list.npy` (tueschend
+aehnlicher Name, letzte Schreiber solo-clip/alexnet) wurden geloescht, um
+Verwechslung bei der Abgabe zu vermeiden.
+
 ### Rank-Fusion (sub-01, Holdout, Split 0)
 | System | top-1 | top-5 |
 |---|---|---|
