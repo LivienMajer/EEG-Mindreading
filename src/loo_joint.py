@@ -42,7 +42,7 @@ def main():
     grid = [(w_ed, w_r, w_j)
             for w_ed in (3, 5, 7)
             for w_r in (1, 2)
-            for w_j in (0, 0.5, 1, 2)]
+            for w_j in (0, 0.5, 1, 2, 3, 5)]
 
     print("LOO weight-selection: megafusion + potentially jointft "
           "[clip 9, alexnet 9, ed w, ridge r, transfers 1 1 1, joint w_j]")

@@ -116,3 +116,57 @@ timestamp,branch,experiment,subject,embedding,window,n_components,embed_dim,epoc
 2026-10-17T13:29:47,,megafusion-plusED-9991111,02,ed_02_xsubj_s0+infonce_02_emb_train__alexnet-f3_s0+infonce_02_emb_train__clip-vitb32_s0+ridge_02_emb_train__clip-vitb32_s0+ranked_tr01_te02_emb_train__clip-vitb32_s0+ranked_tr03_te02_emb_train__clip-vitb32_s0+ranked_tr04_te02_emb_train__clip-vitb32_s0,,,,,,,,,,0.24509803921568626,0.49019607843137253,mean-rank fusion of 7 rankings
 2026-10-17T13:29:50,,megafusion-plusED-9991111,03,ed_03_xsubj_s0+infonce_03_emb_train__alexnet-f3_s0+infonce_03_emb_train__clip-vitb32_s0+ridge_03_emb_train__clip-vitb32_s0+ranked_tr01_te03_emb_train__clip-vitb32_s0+ranked_tr02_te03_emb_train__clip-vitb32_s0+ranked_tr04_te03_emb_train__clip-vitb32_s0,,,,,,,,,,0.13725490196078433,0.4019607843137255,mean-rank fusion of 7 rankings
 2026-10-17T13:29:52,,megafusion-plusED-9991111,04,ed_04_xsubj_s0+infonce_04_emb_train__alexnet-f3_s0+infonce_04_emb_train__clip-vitb32_s0+ridge_04_emb_train__clip-vitb32_s0+ranked_tr01_te04_emb_train__clip-vitb32_s0+ranked_tr02_te04_emb_train__clip-vitb32_s0+ranked_tr03_te04_emb_train__clip-vitb32_s0,,,,,,,,,,0.16666666666666666,0.47058823529411764,mean-rank fusion of 7 rankings
+2026-10-17T13:33:20,,sanity-check-loo,01,infonce_01_emb_train__clip-vitb32_s0+ridge_01_emb_train__clip-vitb32_s0,,,,,,,,,,0.14705882352941177,0.3333333333333333,mean-rank fusion of 2 rankings
+2026-10-17T13:33:31,,loo-heldout,01,megafusion,,,,,,,,,,0.23529411764705882,0.5392156862745098,weights picked on other 3 dev subjects: 9:9:5:2:1:1:1
+2026-10-17T13:33:32,,loo-heldout,02,megafusion,,,,,,,,,,0.2549019607843137,0.5,weights picked on other 3 dev subjects: 9:9:5:2:1:1:1
+2026-10-17T13:33:32,,loo-heldout,03,megafusion,,,,,,,,,,0.19607843137254902,0.4215686274509804,weights picked on other 3 dev subjects: 9:9:5:2:1:1:1
+2026-10-17T13:33:32,,loo-heldout,04,megafusion,,,,,,,,,,0.20588235294117646,0.47058823529411764,weights picked on other 3 dev subjects: 9:9:5:2:1:1:1
+2026-10-17T13:33:32,,loo-heldout,mean,megafusion,,,,,,,,,,0.2230392156862745,0.4828431372549019,leave-one-dev-subject-out; weights per fold from other 3
+2026-10-17T13:33:48,,megafusion-final-9952111,01,ed_01_xsubj_s0+infonce_01_emb_train__alexnet-f3_s0+infonce_01_emb_train__clip-vitb32_s0+ridge_01_emb_train__clip-vitb32_s0+ranked_tr02_te01_emb_train__clip-vitb32_s0+ranked_tr03_te01_emb_train__clip-vitb32_s0+ranked_tr04_te01_emb_train__clip-vitb32_s0,,,,,,,,,,0.23529411764705882,0.5392156862745098,mean-rank fusion of 7 rankings
+2026-10-17T13:33:49,,megafusion-final-9952111,02,ed_02_xsubj_s0+infonce_02_emb_train__alexnet-f3_s0+infonce_02_emb_train__clip-vitb32_s0+ridge_02_emb_train__clip-vitb32_s0+ranked_tr01_te02_emb_train__clip-vitb32_s0+ranked_tr03_te02_emb_train__clip-vitb32_s0+ranked_tr04_te02_emb_train__clip-vitb32_s0,,,,,,,,,,0.2549019607843137,0.5,mean-rank fusion of 7 rankings
+2026-10-17T13:33:52,,megafusion-final-9952111,03,ed_03_xsubj_s0+infonce_03_emb_train__alexnet-f3_s0+infonce_03_emb_train__clip-vitb32_s0+ridge_03_emb_train__clip-vitb32_s0+ranked_tr01_te03_emb_train__clip-vitb32_s0+ranked_tr02_te03_emb_train__clip-vitb32_s0+ranked_tr04_te03_emb_train__clip-vitb32_s0,,,,,,,,,,0.19607843137254902,0.4215686274509804,mean-rank fusion of 7 rankings
+2026-10-17T13:33:53,,megafusion-final-9952111,04,ed_04_xsubj_s0+infonce_04_emb_train__alexnet-f3_s0+infonce_04_emb_train__clip-vitb32_s0+ridge_04_emb_train__clip-vitb32_s0+ranked_tr01_te04_emb_train__clip-vitb32_s0+ranked_tr02_te04_emb_train__clip-vitb32_s0+ranked_tr03_te04_emb_train__clip-vitb32_s0,,,,,,,,,,0.20588235294117646,0.47058823529411764,mean-rank fusion of 7 rankings
+2026-10-17T16:31:06,,loo-heldout,01,megafusion,,,,,,,,,,0.23529411764705882,0.5392156862745098,weights picked on other 3 dev subjects: 9:9:5:2:1:1:1
+2026-10-17T16:31:06,,loo-heldout,02,megafusion,,,,,,,,,,0.2549019607843137,0.5,weights picked on other 3 dev subjects: 9:9:5:2:1:1:1
+2026-10-17T16:31:06,,loo-heldout,03,megafusion,,,,,,,,,,0.19607843137254902,0.4215686274509804,weights picked on other 3 dev subjects: 9:9:5:2:1:1:1
+2026-10-17T16:31:07,,loo-heldout,04,megafusion,,,,,,,,,,0.20588235294117646,0.47058823529411764,weights picked on other 3 dev subjects: 9:9:5:2:1:1:1
+2026-10-17T16:31:07,,loo-heldout,mean,megafusion,,,,,,,,,,0.2230392156862745,0.4828431372549019,leave-one-dev-subject-out; weights per fold from other 3
+2026-10-17T17:05:39,,joint,01,emb_train__clip-vitb32,,,,,,,,,,0.0196078431372549,0.0784313725490196,E-A joint
+2026-10-17T17:05:40,,joint,02,emb_train__clip-vitb32,,,,,,,,,,0.0196078431372549,0.06862745098039216,E-A joint
+2026-10-17T17:05:40,,joint,03,emb_train__clip-vitb32,,,,,,,,,,0.0196078431372549,0.058823529411764705,E-A joint
+2026-10-17T17:05:40,,joint,04,emb_train__clip-vitb32,,,,,,,,,,0.00980392156862745,0.09803921568627451,E-A joint
+2026-10-17T17:05:41,,joint,05,emb_train__clip-vitb32,,,,,,,,,,0.029411764705882353,0.058823529411764705,E-A joint
+2026-10-17T17:05:41,,joint,06,emb_train__clip-vitb32,,,,,,,,,,0.00980392156862745,0.049019607843137254,E-A joint
+2026-10-17T17:05:42,,jointft,01,emb_train__clip-vitb32,,,,,,,,,,0.029411764705882353,0.09803921568627451,E-A joint
+2026-10-17T17:05:42,,jointft,02,emb_train__clip-vitb32,,,,,,,,,,0.0196078431372549,0.06862745098039216,E-A joint
+2026-10-17T17:05:43,,jointft,03,emb_train__clip-vitb32,,,,,,,,,,0.0196078431372549,0.08823529411764706,E-A joint
+2026-10-17T17:05:45,,jointft,04,emb_train__clip-vitb32,,,,,,,,,,0.00980392156862745,0.09803921568627451,E-A joint
+2026-10-17T17:05:45,,jointft,05,emb_train__clip-vitb32,,,,,,,,,,0.029411764705882353,0.049019607843137254,E-A joint
+2026-10-17T17:05:46,,jointft,06,emb_train__clip-vitb32,,,,,,,,,,0.0,0.049019607843137254,E-A joint
+2026-10-17T17:12:47,,joint,01,emb_train__clip-vitb32,,,,,,,,,,0.11764705882352941,0.30392156862745096,E-A joint
+2026-10-17T17:12:47,,joint,02,emb_train__clip-vitb32,,,,,,,,,,0.0784313725490196,0.30392156862745096,E-A joint
+2026-10-17T17:12:47,,joint,03,emb_train__clip-vitb32,,,,,,,,,,0.09803921568627451,0.3137254901960784,E-A joint
+2026-10-17T17:12:48,,joint,04,emb_train__clip-vitb32,,,,,,,,,,0.10784313725490197,0.3137254901960784,E-A joint
+2026-10-17T17:12:48,,joint,05,emb_train__clip-vitb32,,,,,,,,,,0.00980392156862745,0.058823529411764705,E-A joint
+2026-10-17T17:12:48,,joint,06,emb_train__clip-vitb32,,,,,,,,,,0.0196078431372549,0.049019607843137254,E-A joint
+2026-10-17T17:13:07,,jointft,01,emb_train__clip-vitb32,,,,,,,,,,0.14705882352941177,0.35294117647058826,E-A joint
+2026-10-17T17:13:22,,jointft,02,emb_train__clip-vitb32,,,,,,,,,,0.09803921568627451,0.30392156862745096,E-A joint
+2026-10-17T17:13:33,,jointft,03,emb_train__clip-vitb32,,,,,,,,,,0.09803921568627451,0.3431372549019608,E-A joint
+2026-10-17T17:13:44,,jointft,04,emb_train__clip-vitb32,,,,,,,,,,0.10784313725490197,0.3431372549019608,E-A joint
+2026-10-17T17:13:55,,jointft,05,emb_train__clip-vitb32,,,,,,,,,,0.00980392156862745,0.06862745098039216,E-A joint
+2026-10-17T17:14:06,,jointft,06,emb_train__clip-vitb32,,,,,,,,,,0.00980392156862745,0.058823529411764705,E-A joint
+2026-10-17T17:17:56,,loo-heldout-joint,01,megafusion+jointft,,,,,,,,,,0.23529411764705882,0.5490196078431373,9:9:5:2:1:1:1:2
+2026-10-17T17:17:56,,loo-heldout-joint,02,megafusion+jointft,,,,,,,,,,0.2647058823529412,0.5098039215686274,9:9:5:2:1:1:1:2
+2026-10-17T17:17:56,,loo-heldout-joint,03,megafusion+jointft,,,,,,,,,,0.20588235294117646,0.4215686274509804,9:9:5:2:1:1:1:2
+2026-10-17T17:17:57,,loo-heldout-joint,04,megafusion+jointft,,,,,,,,,,0.21568627450980393,0.45098039215686275,9:9:5:2:1:1:1:2
+2026-10-17T17:17:57,,loo-heldout-joint,mean,megafusion+jointft,,,,,,,,,,0.23039215686274508,0.48284313725490197,"leave-one-dev-subject-out, 9-member grid incl w_joint"
+2026-10-17T20:16:36,,loo-heldout-joint,01,megafusion+jointft,,,,,,,,,,0.23529411764705882,0.5490196078431373,9:9:5:2:1:1:1:2
+2026-10-17T20:16:38,,loo-heldout-joint,02,megafusion+jointft,,,,,,,,,,0.2647058823529412,0.5098039215686274,9:9:5:2:1:1:1:2
+2026-10-17T20:16:39,,loo-heldout-joint,03,megafusion+jointft,,,,,,,,,,0.20588235294117646,0.4215686274509804,9:9:5:2:1:1:1:2
+2026-10-17T20:16:40,,loo-heldout-joint,04,megafusion+jointft,,,,,,,,,,0.21568627450980393,0.45098039215686275,9:9:5:2:1:1:1:2
+2026-10-17T20:16:40,,loo-heldout-joint,mean,megafusion+jointft,,,,,,,,,,0.23039215686274508,0.48284313725490197,"leave-one-dev-subject-out, 9-member grid incl w_joint"
+2026-10-17T20:33:31,,loo-heldout-joint,01,megafusion+jointft,,,,,,,,,,0.23529411764705882,0.5490196078431373,9:9:5:2:1:1:1:2
+2026-10-17T20:33:33,,loo-heldout-joint,02,megafusion+jointft,,,,,,,,,,0.24509803921568626,0.5098039215686274,9:9:5:2:1:1:1:3
+2026-10-17T20:33:34,,loo-heldout-joint,03,megafusion+jointft,,,,,,,,,,0.20588235294117646,0.4215686274509804,9:9:5:2:1:1:1:2
+2026-10-17T20:33:34,,loo-heldout-joint,04,megafusion+jointft,,,,,,,,,,0.21568627450980393,0.45098039215686275,9:9:5:2:1:1:1:2
+2026-10-17T20:33:34,,loo-heldout-joint,mean,megafusion+jointft,,,,,,,,,,0.22549019607843138,0.48284313725490197,"leave-one-dev-subject-out, 9-member grid incl w_joint"
