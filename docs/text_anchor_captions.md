@@ -84,11 +84,29 @@ aus **demselben** ViT-B/32 openai CLIP stammen (Image- vs. Text-Tower), ist
   top-1-Agreement mit dem Clip-Member **0.57** → zu viel Fehler-Sharing →
   LOO **NO-GO** (w_cap=0 in 3/4 Folds, held 12.06 vs 23.04... s. scores.csv,
   experiment `loo-heldout-caption`).
-- **Blend α=1.0**, sub-01-Pilot: **10.78** solo, Agreement mit Clip nur
-  **0.36** — stärkste Dekorrelation bei erhaltenem Niveau. Dev-Komplettlauf
-  + letztes LOO-Gate läuft. LETZTER Versuch der Text-Familie: bei NO-GO
-  wird E-T4-lin abgeschlossen (4 Kandidaten ehrlich geloggt: caption-ridge,
-  caption-infonce, blend-035, blend-100).
+- **Blend α=1.0**, dev mean **7.11/31.14** (sub-01 10.78, sonst 3.9–7.8),
+  Agreement mit Clip 0.36 → LOO **NO-GO** (w_cap=0 in 3/4 Folds, held 22.30
+  vs 23.04; der eine w_cap=0.5-Fold verliert auf dem gehaltenen Subject).
+
+### E-T4-lin ENDGÜLTIGES FAZIT (alle 4 Kandidaten, ehrlich geloggt)
+
+| Kandidat | Solo top-1 | Agreement m. Clip | LOO |
+|---|---|---|---|
+| caption-ridge | 3.19% | ~0.03–0.08 | ❌ w=0 in 4/4 |
+| caption-infonce | 4.90% | ~0.06 | ❌ w=0 in 3/4 |
+| capblend α=0.35 | 10.78% | 0.57 | ❌ w=0 in 3/4 |
+| capblend α=1.0 | 7.11% | 0.36 | ❌ w=0 in 3/4 |
+
+**Frontier-Befund:** Der lineare Text-Pull tauscht Eins-zu-eins Solo-Stärke
+gegen Dekorrelation — bei jedem α liegt der Kandidat unterhalb der
+Fusions-Nutzwert-Schwelle (entweder zu clip-korreliert ODER zu schwach).
+Ein Sweet-Spot existiert im linearen Blend nicht. Damit ist auch das
+Argument für den vollen E-T4-LoRA-Lauf (GPU) entkräftet: das LoRA könnte
+nichtlinear dekorrelieren, müsste aber dieselbe Frontier überwinden —
+nach 4 konsistenten NO-GOs ist der erwartete Nutzwert marginal. **E-T4
+wird geschlossen; Text-Familie = saubere Negativ-Kette mit klarem
+Muster (gut für Report/Qualitätsscore).** Fusion + Submissions bleiben
+die validierten 9-Member (23.04/48.28 LOO).
 - METHODIK-NOTIZ: Die ursprüngliche „Rank-Corr 0.063"-Zahl stammt aus demselben
   argsort-Bug wie der RRF-Scratch (indiziert Video-ID-Werte statt Ränge) und
   ist ungültig — gültiges Diversitätsmaß in dieser Kette ist die top-1-Agreement.

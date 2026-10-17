@@ -28,7 +28,7 @@ from .loo_generalization import SUBS, fuse, topk
 
 TST = "work/tst_ranked"
 E = "emb_train__clip-vitb32"
-CAP = "emb_train__capblend035"
+CAP = "emb_train__capblend100"
 DATA_ROOT = Path("provided_material/eeg-mind-reading-challenge/"
                  "eeg-mind-reading-challenge")
 
