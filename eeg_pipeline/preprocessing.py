@@ -4,7 +4,7 @@ EEG preprocessing
 Manual use:
 
 1) Command line, fixed settings
-       python -m eeg_pipeline.preprocessing --data_dir . --out_dir preprocessed \\
+       python -m eeg_pipeline.preprocessing --data_dir <folder with trn/ tst/ tst_stim/> --out_dir preprocessed \\
               --baseline trial --normalize split
 
 2) From Python (e.g. in the encoder notebook)

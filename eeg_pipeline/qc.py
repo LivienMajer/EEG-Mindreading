@@ -17,7 +17,7 @@ on the sub-01..04 test sets.
 
 Usage (full report with plots; the automatic pipeline uses the same checks)
 -----
-    python -m eeg_pipeline.qc --data_dir /path/to/challenge_data --output_dir qc_out
+    python -m eeg_pipeline.qc --data_dir <folder with trn/ tst/ tst_stim/> --output_dir qc_out
     python -m eeg_pipeline.qc --data_dir . --output_dir qc_out --subjects 1 2 3 4 5 6
 
 The data directory must contain the folders `trn/` and `tst/` as provided by the
