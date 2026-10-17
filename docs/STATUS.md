@@ -14,8 +14,10 @@ werden hier weitergeführt).
    schlägt die Ridge-Referenzarchitektur auf sub-01 um Faktor ~2.3.
 2. Der Zielraum (alexnet-f3 vs. clip-vitb32) ist **sekundär** — der Effekt liegt
    innerhalb der Seed-Streuung. Der Flaschenhals ist die EEG-Seite.
-3. **Größter Hebel bislang: Rank-Fusion komplementärer Räume** — mean-rank
-   Ensemble zweier Räume: top-1 11.8%, top-5 38.2% (sub-01 Holdout).
+3. **Historischer Versuch, nicht mehr Teil des Workflows:** Ein Mean-Rank-
+   Ensemble komplementärer Räume erreichte 11,8%/38,2% (sub-01 Holdout).
+   Checkpoint-level Rank-Fusion wird nicht mehr verwendet; aktuelle
+   Vorhersagen stammen aus einem einzelnen EEGNet-Checkpoint.
 
 ## 2. Zahlenpolitik (Protokolle sauber auseinanderhalten!)
 
@@ -44,16 +46,12 @@ Chance-Level überall: top-1 0.98%, top-5 4.9% (102 Kandidaten).
 τ-Studie (alexnet, Split 0, 1 Seed): τ=0.1 → 6.86/23.53; τ=0.05 → 4.90/28.43
 (schärferes τ verschiebt Masse von top-1 nach top-5).
 
-### Rank-Fusion (sub-01, Holdout, Split 0)
-| System | top-1 | top-5 |
-|---|---|---|
-| beste Einzelmessung (clip, netseed 2) | 7.84% | 33.33% |
-| **mean-rank Ensemble alexnet+clip** | **11.76%** | **38.24%** |
+### Historisches Rank-Fusion-Experiment (nicht mehr im Workflow)
 
-Kernbefund der Fusionsanalyse: Die top-1-Treffer der beiden Räume überlappen sich
-**NULL** (6 vs. 8 Treffer, 0 gemeinsam); top-5-gelöste Trials: 30 vs. 34, nur 13
-gemeinsam, **Union = 51%** aller Trials. Die Räume sind komplementär → Fusion
-ist kein Tuning-Trick, sondern strukturell begründet.
+Das frühere Mean-Rank-Ensemble auf sub-01 Holdout erreichte 11.76%/38.24%
+(top-1/top-5), verglichen mit 7.84%/33.33% für die beste Einzelmessung. Dieser
+Befund ist ausschließlich historisch; es gibt keinen unterstützten
+Checkpoint-Level-Rank-Fusion-Befehl mehr.
 
 ## 4. Interpretation & Entscheide
 
@@ -62,9 +60,8 @@ ist kein Tuning-Trick, sondern strukturell begründet.
 - **Seed-Disziplin**: Single-Seed-Zahlen sind nicht aussagekräftig (die
   exakte "Gleichheit" beider Räume bei netseed 0 war Zufall). Regel: 3 Netz-Seeds
   mitteln; Vergleiche nur gegen Streuband bewerten.
-- **Strategiewechsel**: Statt "besten Raum suchen" → **Diversität sammeln**.
-  Jeder *andersartige* Raum lohnt für die Fusion (auch wenn er solo schwächer ist),
-  solange er andere Trials löst.
+- **Aktueller Inferenzpfad**: ein EEGNet-Checkpoint mit gewichteter CSLS-
+  Late-Fusion seiner Feature-Heads; kein Rank-Fusion mehrerer Checkpoints.
 - **Audio** (docs/multimodal_audio.md): nur als separater Fusions-Zweig nach
   billigem Ridge-Probe; tri-modales Joint-Alignment verworfen (faulty-positive-
   Falle, s. XID/RINCE-Papers).
@@ -79,14 +76,12 @@ ist kein Tuning-Trick, sondern strukturell begründet.
 # Ridge-Referenz
 .venv\Scripts\python.exe -m src.bench_embeddings --data-dir ... --emb-train work\emb_train__clip-vitb32.npz --emb-test work\emb_test__clip-vitb32.npz --window snr
 
-# Rank-Fusion
-.venv\Scripts\python.exe -m src.ensemble_rank --rankings work\holdout\ranked_sub01_emb_train__alexnet-f3_s0_n*.npy work\holdout\ranked_sub01_emb_train__clip-vitb32_s0_n*.npy --truth work\holdout\y_sub01_s0.npy
 ```
 
 ## 6. Offene Fronten (Priorität)
 
-1. **Fusionspool vergrößern**: 3 Netz-Seeds × beide Räume als 6er-Pool (läuft/nächste) +
-   Ridge-Rankings mitfusionieren (Ridge hat anderen Bias → vermutlich komplementär).
+1. **EEG-Flaschenhals**: Encoder- und Augmentierungsvarianten unter identischem
+   Validierungsprotokoll vergleichen; keine Checkpoint-Rank-Fusion.
 2. **Diversitäts-Räume**: DINOv2, SigLIP (GPU-Teammates, s. README-Workflow);
    später ggf. Audio-Zweig nach Probe (docs/multimodal_audio.md Entscheidungsbaum).
 3. **EEG-Flaschenhals**: Exp #5 — Teammate-Encoder (`models/xsubj/checkpoints/all/model.pt`,

@@ -53,6 +53,7 @@ class VideoBank:
     emb: np.ndarray
     visual_emb: np.ndarray | None = None
     audio_emb: np.ndarray | None = None
+    spaces: dict[str, np.ndarray] | None = None
 
     @property
     def dim(self) -> int:
@@ -91,6 +92,7 @@ def load_video_bank(cfg: dict) -> VideoBank:
         path = resolve(configured_path)
         if not path.is_file():
             raise FileNotFoundError(f"Video embedding archive not found: {path}")
+        feature_layer = 0
         with np.load(path, allow_pickle=False) as archive:
             if "video_ids" in archive and "embeddings" in archive:
                 ids = np.asarray([_video_key(value)
@@ -101,6 +103,10 @@ def load_video_bank(cfg: dict) -> VideoBank:
                 weights = _scalar(
                     archive, "pretrained",
                     _scalar(archive, "checkpoint", ""))
+                feature_layer = int(_scalar(archive, "feature_layer", "0"))
+                if feature_layer < 0:
+                    raise ValueError(
+                        f"Invalid feature_layer {feature_layer} in {path}")
             else:
                 grouped: dict[str, list[tuple[int, np.ndarray]]] = {}
                 for key in archive.files:
@@ -137,11 +143,15 @@ def load_video_bank(cfg: dict) -> VideoBank:
             if not np.isfinite(embeddings).all():
                 raise ValueError(f"Non-finite embeddings in {path}")
 
-            slot_name = ":".join(part for part in (backend, model, weights) if part)
+            slot_parts = [part for part in (backend, model, weights) if part]
+            if feature_layer:
+                slot_parts.append(f"layer{feature_layer}")
+            slot_name = ":".join(slot_parts)
             slot = slots.setdefault(slot_name, {
                 "dim": embeddings.shape[1], "values": {},
                 "modality": _feature_modality(
-                    backend, model, weights, path)})
+                    backend, model, weights, path),
+                "feature_layer": feature_layer})
             if slot["dim"] != embeddings.shape[1]:
                 raise ValueError(
                     f"Embedding dimension changed for model {slot_name}: "
@@ -212,7 +222,39 @@ def load_video_bank(cfg: dict) -> VideoBank:
         np.divide(result, row_norms, out=result, where=row_norms > 1e-8)
         return result
 
+    head_slots: dict[str, dict] = {}
+    for name, slot in slots.items():
+        identity = name.lower()
+        if "videomae" in identity:
+            layer = slot["feature_layer"]
+            head_name = f"videomae_layer{layer}" if layer else "videomae"
+        elif "alexnet" in identity or "fc6" in identity:
+            head_name = "alexnet"
+        elif "clap" in identity or "audio" in identity:
+            head_name = "clap"
+        elif "clip" in identity:
+            head_name = "clip"
+        else:
+            continue
+        if head_name in head_slots:
+            raise ValueError(
+                f"Multiple embedding archives map to the {head_name!r} "
+                "head; configure one archive/model space per head.")
+        head_slots[head_name] = slot
+
+    spaces: dict[str, np.ndarray] = {}
+    for head_name, slot in head_slots.items():
+        rows = []
+        for video_id in video_ids:
+            value = slot["values"].get(video_id)
+            if value is None:
+                value = np.zeros(slot["dim"], dtype=np.float32)
+            norm = float(np.linalg.norm(value))
+            rows.append(value / max(norm, 1e-8))
+        spaces[head_name] = np.stack(rows).astype(np.float32)
+
     return VideoBank(
         np.asarray(video_ids), embeddings,
         visual_emb=modality_embeddings("visual"),
-        audio_emb=modality_embeddings("audio"))
+        audio_emb=modality_embeddings("audio"),
+        spaces=spaces)

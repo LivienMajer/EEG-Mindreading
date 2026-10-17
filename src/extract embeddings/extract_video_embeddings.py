@@ -33,6 +33,7 @@ def load_encoder(
     model_name: str,
     pretrained: str | None,
     device: str,
+    intermediate_layers: tuple[int, ...] = (),
 ) -> ImageEncoder:
     """Load an image-embedding backend.
 
@@ -98,6 +99,38 @@ def load_encoder(
             model_name=model_name,
             pretrained=pretrained,
         )
+    if backend == "alexnet":
+        from torchvision.models import AlexNet_Weights, alexnet
+
+        if model_name.lower() != "alexnet":
+            raise ValueError(
+                "The alexnet backend supports only --model alexnet")
+        if pretrained is None or pretrained == "DEFAULT":
+            weights = AlexNet_Weights.DEFAULT
+        else:
+            try:
+                weights = AlexNet_Weights[pretrained]
+            except KeyError as exc:
+                raise ValueError(
+                    "AlexNet --pretrained must be DEFAULT or "
+                    f"one of {[weight.name for weight in AlexNet_Weights]}") from exc
+
+        model = alexnet(weights=weights).eval().to(device)
+
+        def encode_fc6(images: torch.Tensor) -> torch.Tensor:
+            features = model.avgpool(model.features(images))
+            x = torch.flatten(features, 1)
+            for layer in list(model.classifier.children())[:3]:
+                x = layer(x)
+            return x
+
+        return ImageEncoder(
+            encode=encode_fc6,
+            encode_multilayer=None,
+            preprocess=weights.transforms(),
+            model_name="alexnet-fc6",
+            pretrained=weights.name,
+        )
     if backend == "videomae":
         if pretrained is not None:
             raise ValueError(
@@ -107,6 +140,17 @@ def load_encoder(
         processor = VideoMAEImageProcessor.from_pretrained(model_name)
         model = VideoMAEModel.from_pretrained(model_name).eval().to(device)
 
+        if intermediate_layers and len(intermediate_layers) != 1:
+            raise ValueError(
+                "VideoMAE extraction supports one intermediate layer per "
+                "archive; run extraction once for each requested layer")
+        if intermediate_layers and any(
+                layer > model.config.num_hidden_layers
+                for layer in intermediate_layers):
+            raise ValueError(
+                f"Requested VideoMAE layers {intermediate_layers} are outside "
+                f"1..{model.config.num_hidden_layers}")
+
         def encode_video(frames: list[Image.Image]) -> torch.Tensor:
             video_frames = [np.asarray(frame.convert("RGB")) for frame in frames]
             inputs = processor(video_frames, return_tensors="pt")
@@ -115,7 +159,17 @@ def load_encoder(
                 raise ValueError(
                     f"{model_name} requires {model.config.num_frames} frames; "
                     f"received {pixels.shape[1]}")
-            tokens = model(pixel_values=pixels).last_hidden_state
+            output = model(
+                pixel_values=pixels,
+                output_hidden_states=bool(intermediate_layers))
+            if intermediate_layers:
+                if output.hidden_states is None:
+                    raise RuntimeError(
+                        "VideoMAE did not return hidden states for the "
+                        "requested intermediate layer")
+                tokens = output.hidden_states[intermediate_layers[0]]
+            else:
+                tokens = output.last_hidden_state
             return F.normalize(tokens.mean(dim=1), dim=-1)
 
         return ImageEncoder(
@@ -127,7 +181,8 @@ def load_encoder(
             encode_video=encode_video,
         )
     raise ValueError(
-        f"Unsupported backend {backend!r}; choose open_clip or videomae")
+        f"Unsupported backend {backend!r}; choose open_clip, alexnet, "
+        "or videomae")
 
 
 def sample_frames(video_path: Path, n_frames: int) -> list[Image.Image]:
@@ -169,8 +224,13 @@ def extract_embeddings(
         raise ValueError("--intermediate-layers must not contain duplicates")
     if any(layer < 1 for layer in intermediate_layers):
         raise ValueError("--intermediate-layers are 1-based and must be positive")
-    if backend == "videomae" and intermediate_layers:
-        raise ValueError("--intermediate-layers only applies to the open_clip backend")
+    if backend not in ("open_clip", "videomae") and intermediate_layers:
+        raise ValueError(
+            "--intermediate-layers applies only to open_clip and videomae")
+    if backend == "videomae" and len(intermediate_layers) > 1:
+        raise ValueError(
+            "VideoMAE accepts one --intermediate-layers value per output "
+            "archive; run once for each layer")
     if limit is not None and limit < 1:
         raise ValueError("--limit must be at least 1")
     if output_path.exists() and not overwrite:
@@ -202,7 +262,8 @@ def extract_embeddings(
             "CUDA was requested, but this PyTorch installation cannot use CUDA.")
 
     print(f"Loading {backend}:{model_name} ({pretrained or 'model default'}) on {device}")
-    encoder = load_encoder(backend, model_name, pretrained, device)
+    encoder = load_encoder(
+        backend, model_name, pretrained, device, intermediate_layers)
     if backend == "videomae" and n_frames != 16:
         raise ValueError(
             f"{model_name} expects 16 frames; pass --n-frames 16 (got {n_frames})")
@@ -243,6 +304,10 @@ def extract_embeddings(
         pretrained=np.asarray(encoder.pretrained),
         n_frames=np.asarray(n_frames, dtype=np.int32),
         intermediate_layers=np.asarray(intermediate_layers, dtype=np.int32),
+        feature_layer=np.asarray(
+            intermediate_layers[0] if backend == "videomae"
+            and intermediate_layers else 0,
+            dtype=np.int32),
     )
     print(f"Saved {len(video_ids)} embeddings (dim {embeddings[0].shape[0]})")
     print(f"Output: {output_path}")
@@ -256,7 +321,7 @@ def main() -> None:
     parser.add_argument("--out", type=Path, required=True,
                         help="Output .npz archive")
     parser.add_argument("--backend", default="open_clip",
-                        choices=("open_clip", "videomae"),
+                        choices=("open_clip", "alexnet", "videomae"),
                         help="Image encoder or temporal video encoder")
     parser.add_argument("--model", default="ViT-B-32",
                         help="Backend model name or Hugging Face model ID")
@@ -266,8 +331,10 @@ def main() -> None:
                         help="Number of evenly spaced frames per video")
     parser.add_argument("--intermediate-layers", type=int, nargs="+", default=(),
                         metavar="LAYER",
-                        help="Also pool these 1-based ViT block activations "
-                             "before the final image embedding")
+                        help="Pool these 1-based OpenCLIP ViT or VideoMAE "
+                             "transformer block activations. OpenCLIP "
+                             "concatenates them with final image features; "
+                             "VideoMAE writes one selected layer per archive.")
     parser.add_argument("--device", choices=("cuda", "cpu"))
     parser.add_argument("--limit", type=int,
                         help="Only encode the first N videos (smoke testing)")

@@ -96,7 +96,25 @@ class RidgeDecoder:
         self.model.fit(self._feat(X), target_emb)
         return self
 
+    def fit_features(
+        self, features: np.ndarray, target_emb: np.ndarray
+    ) -> "RidgeDecoder":
+        if features.ndim != 2 or len(features) != len(target_emb):
+            raise ValueError(
+                "Precomputed features and target embeddings must be aligned 2D arrays")
+        self.model.fit(features, target_emb)
+        return self
+
     def predict(self, X: np.ndarray) -> np.ndarray:
         prediction = self.model.predict(self._feat(X))
+        return self._normalize(prediction)
+
+    def predict_features(self, features: np.ndarray) -> np.ndarray:
+        if features.ndim != 2:
+            raise ValueError("Precomputed Ridge features must be a 2D array")
+        return self._normalize(self.model.predict(features))
+
+    @staticmethod
+    def _normalize(prediction: np.ndarray) -> np.ndarray:
         return (prediction / (np.linalg.norm(prediction, axis=1, keepdims=True)
                               + 1e-8)).astype(np.float32)

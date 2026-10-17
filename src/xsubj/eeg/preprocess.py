@@ -12,6 +12,7 @@ sign. Removing each split's own mean response and scaling per split cancels both
 """
 from __future__ import annotations
 
+import hashlib
 from dataclasses import replace
 from fractions import Fraction
 
@@ -54,8 +55,16 @@ def preprocess_subject(d: SubjectData, p: dict) -> SubjectData:
 
 
 def euclidean_alignment(X: np.ndarray) -> np.ndarray:
-    """He & Wu (2019): whiten trials by the subject's mean spatial covariance, R^-1/2 X."""
-    R = np.mean([x @ x.T / x.shape[-1] for x in X], axis=0)
+    """Whiten trials using the trace-normalized mean spatial covariance."""
+    trial_covariances = []
+    for x in X:
+        covariance = x @ x.T
+        trace = np.trace(covariance)
+        if not np.isfinite(trace) or trace <= 0:
+            raise ValueError(
+                "Euclidean alignment requires finite, non-zero-power trials")
+        trial_covariances.append(covariance / trace)
+    R = np.mean(trial_covariances, axis=0)
     w, V = np.linalg.eigh(R)
     w = np.maximum(w, w.max() * 1e-6)                  # rank deficiency from average reference
     R_isqrt = (V / np.sqrt(w)) @ V.T
@@ -64,7 +73,16 @@ def euclidean_alignment(X: np.ndarray) -> np.ndarray:
 
 def load_preprocessed(cfg: dict, subjects: list[str] | None = None) -> list[SubjectData]:
     """Load + preprocess all subjects/splits, caching the result per (data, preprocess) config."""
-    cache = resolve(cfg["data"]["cache_dir"]) / config_hash(cfg["data"], cfg["preprocess"])
+    label_signature = []
+    if cfg["data"]["format"] == "challenge":
+        labels_dir = resolve(cfg["data"]["challenge_dir"]) / "tst_stim"
+        label_signature = [
+            (path.name, hashlib.sha256(path.read_bytes()).hexdigest())
+            for path in sorted(labels_dir.glob("sub-*_tst_stim.npy"))
+        ]
+    cache = resolve(cfg["data"]["cache_dir"]) / config_hash(
+        cfg["data"], cfg["preprocess"], label_signature,
+        "trace_normalized_euclidean_alignment_v1")
     if not (cache / "done").exists():
         cache.mkdir(parents=True, exist_ok=True)
         for d in load_subjects(cfg):

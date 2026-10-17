@@ -37,6 +37,40 @@ def csls_similarity(pred: np.ndarray, cand_emb: np.ndarray, k: int = 10) -> np.n
     return 2 * sim - query_density[:, None] - candidate_density[None, :]
 
 
+def weighted_csls_similarity(
+    predictions: dict[str, np.ndarray],
+    candidate_embeddings: dict[str, np.ndarray],
+    weights: dict[str, float],
+    k: int = 10,
+) -> np.ndarray:
+    """Compute CSLS per embedding space, then fuse the weighted score matrices."""
+    names = tuple(predictions)
+    if not names or set(names) != set(candidate_embeddings):
+        raise ValueError(
+            "Prediction and candidate embedding heads must have the same "
+            "non-empty names")
+    if set(weights) != set(names):
+        raise ValueError("Fusion weights must be provided for every prediction head")
+    if any(not np.isfinite(weight) or weight < 0 for weight in weights.values()):
+        raise ValueError("Fusion weights must be finite and non-negative")
+    weight_total = sum(weights.values())
+    if weight_total <= 0:
+        raise ValueError("At least one fusion weight must be greater than zero")
+
+    fused = None
+    for name in names:
+        scores = csls_similarity(
+            predictions[name], candidate_embeddings[name], k)
+        if fused is None:
+            fused = np.zeros_like(scores)
+        elif scores.shape != fused.shape:
+            raise ValueError(
+                f"CSLS score shape for head {name!r} does not match other heads")
+        fused += (weights[name] / weight_total) * scores
+    assert fused is not None
+    return fused
+
+
 def retrieval_metrics(pred: np.ndarray, y: np.ndarray, bank_emb: np.ndarray, ks, seed: int = 0,
                       col_norm: bool = False, csls_k: int | None = None) -> dict:
     """pred: (n, d) unit EEG embeddings; y: (n,) bank indices. Candidates = unique videos in y."""

@@ -17,8 +17,14 @@ from pathlib import Path
 import numpy as np
 
 from src.xsubj.eeg.preprocess import load_preprocessed
-from src.xsubj.metrics import retrieval_metrics
-from src.xsubj.train import embed, load_checkpoint, target_embeddings
+from src.xsubj.metrics import retrieval_metrics, weighted_csls_similarity
+from src.xsubj.train import (
+    embed,
+    embed_heads,
+    embed_tta,
+    load_checkpoint,
+    target_embeddings,
+)
 from src.xsubj.utils import get_device, load_config, resolve
 from src.xsubj.video.embeddings import load_video_bank
 
@@ -30,6 +36,11 @@ def main():
     ap.add_argument("--subjects", nargs="*", default=None)
     ap.add_argument("--candidates", default=None)
     ap.add_argument("--top", type=int, default=5)
+    ap.add_argument("--tta-offsets", nargs="+", type=float, default=None,
+                    metavar="SECONDS",
+                    help="enable EEG test-time crop averaging at these start offsets")
+    ap.add_argument("--tta-duration", type=float, default=0.8,
+                    help="duration in seconds for each TTA crop (default: 0.8)")
     args = ap.parse_args()
 
     device = get_device()
@@ -40,6 +51,10 @@ def main():
     model, ck = load_checkpoint(args.checkpoint, bank)
     model.to(device)
     candidate_embeddings = target_embeddings(model, bank, device)
+    head_weights = {
+        name: float(cfg["model"].get("head_weights", {}).get(name, 1.0))
+        for name in model.head_names
+    } if model.multi_head else None
     cand = json.loads(Path(args.candidates).read_text()) if args.candidates else {}
     lut = {s: i for i, s in enumerate(ck["subject_list"])}
 
@@ -50,7 +65,57 @@ def main():
         w.writerow(["subject", "trial", "prediction", f"top{args.top}", "true"])
         for d in load_preprocessed(cfg, args.subjects):
             subj = np.full(len(d.X), lut.get(d.subject, -1))
-            pred = embed(model, d.X, subj, device)
+            if model.multi_head:
+                head_predictions = (
+                    embed_tta(
+                        model, d.X, subj, device, d.fs, args.tta_offsets,
+                        args.tta_duration)
+                    if args.tta_offsets else
+                    embed_heads(model, d.X, subj, device))
+                if not isinstance(head_predictions, dict):
+                    raise ValueError(
+                        "Multi-head prediction expected per-head embeddings")
+                all_head_embeddings = {
+                    name: bank.spaces[name] for name in model.head_names}
+                full_scores = weighted_csls_similarity(
+                    head_predictions, all_head_embeddings, head_weights, k=10)
+                for i in range(len(d.X)):
+                    ids = (
+                        np.asarray(cand[d.subject][i])
+                        if d.subject in cand else bank.ids)
+                    if d.subject in cand:
+                        positions = bank.lookup(ids)
+                        scores = weighted_csls_similarity(
+                            head_predictions,
+                            {name: bank.spaces[name][positions]
+                             for name in model.head_names},
+                            head_weights, k=10)[i]
+                    else:
+                        scores = full_scores[i]
+                    order = np.argsort(-scores)
+                    w.writerow([
+                        d.subject, i, ids[order[0]],
+                        " ".join(ids[order[: args.top]]),
+                        d.video_id[i] if d.video_id is not None else ""])
+                if d.video_id is not None and d.subject not in cand:
+                    true_positions = bank.lookup(d.video_id)
+                    ranks = (
+                        full_scores > full_scores[
+                            np.arange(len(d.X)), true_positions, None]
+                    ).sum(axis=1)
+                    print(
+                        d.subject, "(late fusion)",
+                        f"top1={(ranks == 0).mean():.3f}",
+                        f"top{args.top}={(ranks < args.top).mean():.3f}")
+                continue
+
+            pred = (
+                embed_tta(
+                    model, d.X, subj, device, d.fs, args.tta_offsets,
+                    args.tta_duration)
+                if args.tta_offsets else embed(model, d.X, subj, device))
+            if isinstance(pred, dict):
+                raise ValueError("Single-head prediction received multiple embeddings")
             for i, z in enumerate(pred):
                 ids = np.array(cand[d.subject][i]) if d.subject in cand else bank.ids
                 order = np.argsort(

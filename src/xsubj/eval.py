@@ -26,9 +26,16 @@ from src.xsubj.metrics import (
     average_repeats,
     permutation_test,
     retrieval_metrics,
+    weighted_csls_similarity,
 )
 from src.xsubj.nets.ridge import RidgeDecoder
-from src.xsubj.train import embed, target_embeddings, train_split
+from src.xsubj.train import (
+    embed,
+    embed_heads,
+    embed_tta,
+    target_embeddings,
+    train_split,
+)
 from src.xsubj.utils import get_device, load_config, resolve, seed_everything
 from src.xsubj.video.embeddings import load_video_bank
 
@@ -54,6 +61,48 @@ def evaluate(
     return res
 
 
+def evaluate_late_fusion(
+    predictions, test: Trials, bank, cfg: dict
+) -> dict:
+    if bank.spaces is None or any(
+            name not in bank.spaces for name in predictions):
+        raise ValueError("Multi-head evaluation requires all head embedding spaces")
+    pool = np.unique(test.y)
+    embeddings = {
+        name: bank.spaces[name][pool] for name in predictions}
+    weights = {
+        name: float(cfg["model"].get("head_weights", {}).get(name, 1.0))
+        for name in predictions}
+    scores = weighted_csls_similarity(
+        predictions, embeddings, weights, k=10)
+    true_columns = np.searchsorted(pool, test.y)
+    ranks = (
+        scores > scores[np.arange(len(test.y)), true_columns, None]
+    ).sum(axis=1)
+    n_candidates = len(pool)
+    result = {
+        "n_trials": int(len(test.y)),
+        "n_videos": int(n_candidates),
+        "top1@all": float((ranks == 0).mean()),
+        "top5@all": float((ranks < 5).mean()),
+        "chance1@all": 1.0 / n_candidates,
+        "mean_rank@all": float(ranks.mean() + 1),
+    }
+    best = scores.argmax(axis=1)
+    rng = np.random.default_rng(cfg["seed"])
+    null = np.array([
+        (best == rng.permutation(true_columns)).mean()
+        for _ in range(cfg["eval"]["n_permutations"])
+    ])
+    result["permutation"] = {
+        "top1@all": result["top1@all"],
+        "null_mean": float(null.mean()),
+        "p_value": float(
+            (1 + (null >= result["top1@all"]).sum()) / (1 + len(null))),
+    }
+    return {"csls": result}
+
+
 def folds(data, mode: str):
     """[(holdout subject or None, test SubjectData list)]"""
     tst = [d for d in data if d.split == "tst" and d.video_id is not None]
@@ -70,6 +119,11 @@ def main():
     ap.add_argument("--mode", default="official", choices=["official", "loso"])
     ap.add_argument("--models", nargs="+", default=["ridge", "encoder"], choices=["ridge", "encoder"])
     ap.add_argument("--epochs", type=int, default=None, help="override train.epochs (quick runs)")
+    ap.add_argument("--tta-offsets", nargs="+", type=float, default=None,
+                    metavar="SECONDS",
+                    help="score encoder with EEG test-time crop averaging")
+    ap.add_argument("--tta-duration", type=float, default=0.8,
+                    help="duration in seconds for each TTA crop (default: 0.8)")
     ap.add_argument("--video-emb", nargs="+", default=None, help="override data.video_emb (several = combined)")
     ap.add_argument("--set", nargs="+", default=[], metavar="KEY=VALUE",
                     help="override config values, e.g. model.arch=mlp train.xsubj_avg.prob=0")
@@ -87,6 +141,10 @@ def main():
         raise SystemExit(
             "Gated fusion changes the target embedding space; run with "
             "--models encoder (ridge cannot share this feature space).")
+    if cfg["model"].get("multi_head", False) and "ridge" in args.models:
+        raise SystemExit(
+            "Multi-head late fusion requires --models encoder; Ridge cannot "
+            "share its independent target spaces.")
     if args.epochs:
         cfg["train"]["epochs"] = args.epochs
     if args.video_emb:
@@ -113,14 +171,36 @@ def main():
                 print(f"ridge   {d.subject}", _short(results["ridge"][d.subject]))
         if "encoder" in args.models:
             seed_everything(cfg["seed"])
-            model, subject_list = train_split(cfg, data, bank, holdout)
+            model, subject_list, _ = train_split(cfg, data, bank, holdout)
             candidate_emb = target_embeddings(model, bank, get_device())
             for d in tests:
                 test = Trials([d], bank, subject_list)
-                pred = embed(model, test.X, test.subj, get_device())
-                results["encoder"][d.subject] = evaluate(
-                    pred, test, bank, cfg["eval"], cfg["seed"],
-                    candidate_embeddings=candidate_emb)
+                pred = None
+                if model.multi_head:
+                    head_predictions = (
+                        embed_tta(
+                            model, test.X, test.subj, get_device(), d.fs,
+                            args.tta_offsets, args.tta_duration)
+                        if args.tta_offsets else
+                        embed_heads(model, test.X, test.subj, get_device()))
+                    if not isinstance(head_predictions, dict):
+                        raise ValueError(
+                            "Multi-head evaluation expected per-head embeddings")
+                    results["encoder"][d.subject] = evaluate_late_fusion(
+                        head_predictions, test, bank, cfg)
+                else:
+                    pred = (
+                        embed_tta(
+                            model, test.X, test.subj, get_device(), d.fs,
+                            args.tta_offsets, args.tta_duration)
+                        if args.tta_offsets else
+                        embed(model, test.X, test.subj, get_device()))
+                    if isinstance(pred, dict):
+                        raise ValueError(
+                            "Single-head evaluation received multiple embeddings")
+                    results["encoder"][d.subject] = evaluate(
+                        pred, test, bank, cfg["eval"], cfg["seed"],
+                        candidate_embeddings=candidate_emb)
                 print(f"encoder {d.subject}", _short(results["encoder"][d.subject]))
                 if "ensemble" in results:  # average of both predicted CLIP vectors
                     ens = preds[("ridge", d.subject)] + pred
@@ -132,6 +212,8 @@ def main():
     for m, res in results.items():
         per_subj = dict(res)
         for name in ("raw", "colnorm", "csls"):
+            if name not in next(iter(per_subj.values())):
+                continue
             keys = [k for k in next(iter(per_subj.values()))[name] if k.startswith(("top", "chance", "mean_rank"))]
             mean = {k: float(np.mean([r[name][k] for r in per_subj.values()])) for k in keys}
             results[m][f"_mean_{name}"] = mean
@@ -147,7 +229,7 @@ def _short(r: dict) -> str:
     def one(t):
         return (f"top1={t['top1@all']:.3f} top5={t.get('top5@all', float('nan')):.3f} "
                 f"(n={t['n_videos']}, p={t['permutation']['p_value']:.3f})")
-    return f"raw {one(r['raw'])} | colnorm {one(r['colnorm'])}"
+    return " | ".join(f"{name} {one(metrics)}" for name, metrics in r.items())
 
 
 if __name__ == "__main__":
