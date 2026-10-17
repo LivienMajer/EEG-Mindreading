@@ -304,6 +304,10 @@ def main():
         np.save(f"work/tst_ranked/truth_{args.sub}_s0.npy", tst.y[order])
     else:
         print("no labels (sub-05/06): submission file written")
+        emb_tag = Path(args.emb_train).stem.replace("_pooled", "")
+        Path("work/tst_ranked").mkdir(parents=True, exist_ok=True)
+        np.save(f"work/tst_ranked/infonce_{args.sub}_{emb_tag}_s{args.seed}.npy",
+                ranked)
         np.save(f"work/sub-{args.sub}_ranked_candidate_list.npy", ranked)
 
 
