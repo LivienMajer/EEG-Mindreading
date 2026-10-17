@@ -73,7 +73,8 @@ def main():
     if args.model in ("encoder", "ensemble"):
         for path in paths:
             ck_cfg = torch.load(path, map_location="cpu", weights_only=False)["cfg"]
-            if ck_cfg["preprocess"] != cfg["preprocess"] or ck_cfg["data"] != cfg["data"]:
+            same_data = {k: v for k, v in ck_cfg["data"].items() if k != "cache_dir"} ==                         {k: v for k, v in cfg["data"].items() if k != "cache_dir"}
+            if ck_cfg["preprocess"] != cfg["preprocess"] or not same_data:
                 raise SystemExit(f"{path} was trained with other data/preprocessing settings than "
                                  f"{args.config}; retrain it (see the submit section of the config)")
     seed_everything(cfg["seed"])
