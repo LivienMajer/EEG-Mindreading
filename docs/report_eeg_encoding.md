@@ -12,8 +12,7 @@ EEG ──► preprocessing ──► EEG encoder (trained, this section) ─►
 
 | | Dev: sub-01 to sub-04 |
 |---|---|
-| **Submission: ridge votes into AlexNet conv3 + VideoMAE layer 8 + CLAP audio** | **23.5 % / 55.6 % / 9.0** |
-| Runner-up: CLIP image ensemble + the same three votes | 27.2 % / 62.7 % / 7.5 |
+| **Submission: CLIP image ensemble 0.75 + AlexNet conv3 1 + VideoMAE layer 8 1 + audio 0.3** | **28.7 % / 65.9 % / 7.2** |
 | CLIP image ensemble (9 encoders + 2 ridges) + audio | 19.9 % / 48.8 % / 10.8 |
 | CLIP image ensemble only | 17.6 % / 47.8 % / 11.5 |
 | 3 image votes, earlier preprocessing (band-pass + average reference) | 13.2 % / 43.1 % / 14.2 |
@@ -199,21 +198,24 @@ Following the team's RSA finding (brain-likeness of an embedding predicts how we
 
 A single ridge into AlexNet conv5 or fc6 space matches the whole CLIP ensemble on the dev subjects. Mid-level visual features are a much better target for these EEG recordings than a semantic image–text embedding, and they transfer better to new subjects.
 
+**Combination and weights.** The layers were combined with the CLIP image ensemble and the audio vote. The weights (CLIP ensemble 0–1, audio 0.3–0.75, conv3 and VideoMAE l8 1–3 each, 135 combinations) were chosen on the dev subjects only, by the mean of top-1 and top-5.
+
+
 
 ## 8. Final configuration
 
-The submission ranks candidates by the weighted sum of three ridge votes, each a pooled ridge (all six subjects' training splits) plus a per-subject ridge, with per-candidate normalisation:
+The submission ranks candidates by a weighted sum of four similarity terms, each per-candidate normalised:
 
-1. **AlexNet conv3** space, weight 2.0
-2. **VideoMAE layer 8** space, weight 1.0
-3. **CLAP audio** space, weight 0.5
+1. **CLIP image ensemble**, weight 0.75: mean of the 9 encoders + pooled ridge + per-subject ridge, summed in CLIP space
+2. **AlexNet conv3** ridge vote (pooled + per-subject), weight 1.0
+3. **VideoMAE layer 8** ridge vote, weight 1.0
+4. **CLAP audio** ridge vote, weight 0.3
 
 | | sub-01 | sub-02 | sub-03 | sub-04 | Dev mean |
 |---|---|---|---|---|---|
-| Top-1 | 26.5 % | 22.5 % | 19.6 % | 25.5 % | **23.5 %** |
-| Top-5 | 54.9 % | 55.9 % | 50.0 % | 61.8 % | **55.6 %** |
+| Top-1 | 30.4 % | 29.4 % | 24.5 % | 30.4 % | **28.7 %** |
+| Top-5 | 63.7 % | 61.8 % | 64.7 % | 73.5 % | **65.9 %** |
 
-The neural encoders and the CLIP ridges (sections 2–4) are not part of this submission; they remain in the runner-up configuration.
 
 Preprocessing: 40 Hz low-pass (no high-pass), no average reference, 0–1 s window, 100 Hz, removal of each split's mean response, scaling, clipping at ±6 SD, Euclidean alignment (all label-free, per subject and split). Against the earlier ridge + 9 encoders submission, adding the per-subject ridge improved top-5 and mean rank significantly; the preprocessing change then improved the mean rank significantly again (section 5).
 

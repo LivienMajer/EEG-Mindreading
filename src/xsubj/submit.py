@@ -9,11 +9,11 @@ Ranking: S = image_weight * S_image + sum_k weight_k * S_k, every term per-candi
   S_image: CLIP image ensemble = mean of the encoders under `submit.encoders` (5x ShallowConvNet,
            3x MLP, 1x EEGNet) + pooled ridge (trn of all six subjects) + per-subject ridge
   S_k:     `submit.extra_votes`, each a pooled + per-subject ridge into another target space
-Default (configs/xsubj.yaml): image_weight 0; AlexNet conv3 2.0, VideoMAE layer 8 1.0, CLAP audio 0.5.
+Default (configs/xsubj.yaml): image_weight 0.75; AlexNet conv3 1.0, VideoMAE layer 8 1.0, CLAP audio 0.3,
+weights chosen on sub-01..04 only.
                                    dev sub-01..04   (top-1 / top-5 / rank)
-  default                          23.5% / 55.6% /  9.0
-  runner-up: image_weight 1, audio 0.5, conv3 2, l8 2
-                                   27.2% / 62.7% /  7.5
+  default                          28.7% / 65.9% /  7.2
+  CLIP image ensemble + audio 0.3  19.9% / 48.8% / 10.8
   CLIP image ensemble only         17.6% / 47.8% / 11.5
 
     python -m src.xsubj.submit                             # ensemble, sub-01..06
