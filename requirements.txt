@@ -21,9 +21,13 @@ seaborn>=0.13
 
 # Utilities
 tqdm>=4.66
+tabulate>=0.9          # eeg_pipeline decisions report
+transformers>=5.20      # VideoMAE + CLAP features (eeg_pipeline.rsa_features)
+av>=18.1                # audio decoding (eeg_pipeline.rsa_features)
 PyYAML>=6.0
 kagglehub             # if data is hosted on kaggle
 
 # Notebook / dev
 jupyter
 ipykernel
+pytest>=7.0

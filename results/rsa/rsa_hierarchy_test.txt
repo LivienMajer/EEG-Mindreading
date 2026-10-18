@@ -1,0 +1,2 @@
+crossover: deep - early = -0.0056 in 65-145 ms, +0.0095 in 185-305 ms; increase in 6/6 subjects, paired t(5) = 5.60, p = 0.0013 (one-sided)
+peak latency: early 105 ms, deep 225 ms, difference 120 ms, jackknife SE 21.1 ms, t(5) = 5.69, p = 0.0012 (one-sided); leave-one-out differences [120, 140] ms

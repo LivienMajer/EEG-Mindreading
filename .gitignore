@@ -1,6 +1,12 @@
 # Data & models
 data/
 models/
+# raw challenge folders and eeg_pipeline outputs
+trn/
+tst/
+tst_stim/
+prep*/
+qc_out*/
 *.fif
 *.edf
 *.bdf
