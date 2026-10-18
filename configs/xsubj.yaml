@@ -98,12 +98,9 @@ submit:                        # default submission: 3 equal votes = mean of the
   #    paired: rank better in 214 vs 141 recordings, p = 0.0001; top-1 47 vs 29 hits, p = 0.05)
   encoders: [all, shallow_s1, shallow_s2, shallow_s3, shallow_s4, mlp_s0, mlp_s1, mlp_s2, eegnet_s0]
   # 4th vote: CLAP audio ridge (pooled + per-subject), added as S_image + audio_weight * S_audio.
-  # mean of top-1 and top-5 there. Ridge votes only (AlexNet conv3 + VideoMAE layer 8 + audio):
-  #   held-out 23.5% / 49.5% / 11.7, dev 23.5% / 55.6% / 9.0
-  # Close runner-up, much better on dev: image_weight 1, audio 0.5, conv3 2, l8 2
-  #   held-out 21.6% / 48.5% / 11.1, dev 27.2% / 62.7% / 7.5
-  image_weight: 0              # weight of the CLIP image ensemble (9 encoders + 2 ridges); 0 = not used
+  # Weights chosen on the dev subjects sub-01..04 only (mean of top-1 and top-5, grid of 135);
+  image_weight: 0.75           # weight of the CLIP image ensemble (9 encoders + 2 ridges); 0 = not used
   extra_votes:                 # pooled + per-subject ridge per target space, added as weight * S_space
-    - {name: audio, emb: models/xsubj/features/clap.npz, weight: 0.5}
-    - {name: alexnet_conv3, emb: models/xsubj/features/rsa/alexnet_conv3.npz, weight: 2.0}
+    - {name: audio, emb: models/xsubj/features/clap.npz, weight: 0.3}
+    - {name: alexnet_conv3, emb: models/xsubj/features/rsa/alexnet_conv3.npz, weight: 1.0}
     - {name: videomae_l8, emb: models/xsubj/features/rsa/videomae_l8.npz, weight: 1.0}
