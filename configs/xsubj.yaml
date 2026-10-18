@@ -81,6 +81,8 @@ ridge:                         # EEG features; chosen by src.xsubj.sweep_feature
   riemann: false               # tangent-space covariance: at chance on its own
   riemann_bands: null
   alphas: [0.1, 1, 10, 100, 1000, 10000, 100000, 1000000]
+  alpha_scale: 0.2             # RidgeCV's choice x 0.2: it is tuned on noisy single trials, the test
+                               #   recordings are averages (LOO over sub-01..04 picks 0.1-0.3)
 
 eval:
   k_candidates: [2, 10, 50, all]
@@ -98,9 +100,14 @@ submit:                        # default submission: 3 equal votes = mean of the
   #    paired: rank better in 214 vs 141 recordings, p = 0.0001; top-1 47 vs 29 hits, p = 0.05)
   encoders: [all, shallow_s1, shallow_s2, shallow_s3, shallow_s4, mlp_s0, mlp_s1, mlp_s2, eegnet_s0]
   # 4th vote: CLAP audio ridge (pooled + per-subject), added as S_image + audio_weight * S_audio.
-  # Weights chosen on the dev subjects sub-01..04 only (mean of top-1 and top-5, grid of 135);
+  # All settings chosen on the dev subjects sub-01..04 only (leave-one-subject-out, report section 8);
   image_weight: 0.75           # weight of the CLIP image ensemble (9 encoders + 2 ridges); 0 = not used
+  pooled_weight: 0.25          # pooled ridge x 0.25 next to the per-subject ridge (LOO: 0.05-0.25 plateau)
+  scoring:                     # cosine terms (one global z-score each), then Sinkhorn over the test split
+    terms: cosine              # cosine | colnorm (per-candidate z-score, the earlier scoring)
+    sinkhorn_tau: 0.3          # null = rank the summed terms directly
   extra_votes:                 # pooled + per-subject ridge per target space, added as weight * S_space
     - {name: audio, emb: models/xsubj/features/clap.npz, weight: 0.3}
     - {name: alexnet_conv3, emb: models/xsubj/features/rsa/alexnet_conv3.npz, weight: 1.0}
     - {name: videomae_l8, emb: models/xsubj/features/rsa/videomae_l8.npz, weight: 1.0}
+    - {name: loudness, emb: models/xsubj/features/rsa/low_loudness.npz, weight: 0.5}

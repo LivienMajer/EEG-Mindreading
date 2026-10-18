@@ -94,6 +94,7 @@ models/xsubj/features/*
 models/xsubj/features/rsa/*
 !models/xsubj/features/rsa/alexnet_conv3.npz
 !models/xsubj/features/rsa/videomae_l8.npz
+!models/xsubj/features/rsa/low_loudness.npz
 !models/xsubj/members/
 !models/xsubj/members/**
 !submissions/sub-0[56]_ranked_candidate_list.npy

@@ -25,6 +25,27 @@ def similarity(pred: np.ndarray, cand_emb: np.ndarray, col_norm: bool = False) -
     return sim
 
 
+def cosine_term(pred: np.ndarray, cand_emb: np.ndarray) -> np.ndarray:
+    """Cosine similarity (recordings x candidates) with one global z-score, so terms of different
+    target spaces can be summed with comparable scales. Unlike col_norm, every candidate keeps its
+    own spread; the per-candidate offsets are handled by sinkhorn()."""
+    sim = (pred / np.linalg.norm(pred, axis=1, keepdims=True)) @ cand_emb.T
+    return (sim - sim.mean()) / (sim.std() + 1e-8)
+
+
+def sinkhorn(score: np.ndarray, tau: float, n_iter: int = 200) -> np.ndarray:
+    """Log of the doubly stochastic matrix proportional to exp(score / tau) (Sinkhorn 1964; Cuturi
+    2013). Every test split holds each candidate exactly once, so rows (recordings) and columns
+    (candidates) are normalised in turn; ranking a row of the result instead of the raw score keeps
+    one "attractive" candidate from topping many recordings. Label-free."""
+    from scipy.special import logsumexp
+    L = score / tau
+    for _ in range(n_iter):
+        L = L - logsumexp(L, axis=1, keepdims=True)
+        L = L - logsumexp(L, axis=0, keepdims=True)
+    return L
+
+
 def retrieval_metrics(pred: np.ndarray, y: np.ndarray, bank_emb: np.ndarray, ks, seed: int = 0,
                       col_norm: bool = False) -> dict:
     """pred: (n, d) unit EEG embeddings; y: (n,) bank indices. Candidates = unique videos in y."""

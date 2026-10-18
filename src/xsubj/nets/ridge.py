@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import numpy as np
 from scipy import signal
-from sklearn.linear_model import RidgeCV
+from sklearn.linear_model import Ridge, RidgeCV
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -56,12 +56,21 @@ def eeg_features(X: np.ndarray, fs: float, tmin: float, r: dict) -> np.ndarray:
 
 
 class RidgeDecoder:
+    """StandardScaler + ridge. alpha is chosen by RidgeCV (efficient leave-one-out on the training
+    trials), then multiplied by `alpha_scale` (default 1): the trials are single presentations, the
+    test recordings look like averages, so the CV choice regularises too strongly for them."""
+
     def __init__(self, r: dict, fs: float, tmin: float):
         self.r, self.fs, self.tmin = r, fs, tmin
         self.model = make_pipeline(StandardScaler(), RidgeCV(alphas=r["alphas"]))
 
     def fit(self, X: np.ndarray, target_emb: np.ndarray) -> "RidgeDecoder":
-        self.model.fit(eeg_features(X, self.fs, self.tmin, self.r), target_emb)
+        F = eeg_features(X, self.fs, self.tmin, self.r)
+        self.model.fit(F, target_emb)
+        scale = self.r.get("alpha_scale", 1.0)
+        if scale != 1.0:
+            alpha = self.model[-1].alpha_ * scale
+            self.model = make_pipeline(StandardScaler(), Ridge(alpha=alpha)).fit(F, target_emb)
         return self
 
     def predict(self, X: np.ndarray) -> np.ndarray:

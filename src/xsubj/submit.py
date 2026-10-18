@@ -5,16 +5,21 @@ in its original order, holding the 102 candidate video IDs (1001..1102) from mos
 likely. Subjects with tst_stim labels (sub-01..04) are scored with the organisers' formula,
 which checks the format end to end.
 
-Ranking: S = image_weight * S_image + sum_k weight_k * S_k, every term per-candidate normalised.
+Ranking: S = image_weight * S_image + sum_k weight_k * S_k, then (optionally) Sinkhorn re-ranking.
   S_image: CLIP image ensemble = mean of the encoders under `submit.encoders` (5x ShallowConvNet,
-           3x MLP, 1x EEGNet) + pooled ridge (trn of all six subjects) + per-subject ridge
-  S_k:     `submit.extra_votes`, each a pooled + per-subject ridge into another target space
-Default (configs/xsubj.yaml): image_weight 0.75; AlexNet conv3 1.0, VideoMAE layer 8 1.0, CLAP audio 0.3,
-weights chosen on sub-01..04 only.
+           3x MLP, 1x EEGNet) + pooled ridge x `pooled_weight` + per-subject ridge
+  S_k:     `submit.extra_votes`, each pooled ridge x `pooled_weight` + per-subject ridge into another
+           target space
+  terms:   `submit.scoring.terms`: cosine (one global z-score per term) or colnorm (per-candidate z-score)
+  Sinkhorn `submit.scoring.sinkhorn_tau`: rows and columns of exp(S / tau) normalised in turn, as every
+           candidate occurs exactly once per test split
+Default (configs/xsubj.yaml): image_weight 0.75; AlexNet conv3 1.0, VideoMAE layer 8 1.0, CLAP 0.3,
+loudness 0.5; pooled_weight 0.25; ridge alpha_scale 0.2; cosine terms, tau 0.3. All chosen on sub-01..04
+(leave-one-subject-out), see docs/report_eeg_encoding.md section 8.
                                    dev sub-01..04   (top-1 / top-5 / rank)
-  default                          28.7% / 65.9% /  7.2
-  CLIP image ensemble + audio 0.3  19.9% / 48.8% / 10.8
-  CLIP image ensemble only         17.6% / 47.8% / 11.5
+  default                          40.9% / 74.8% /  4.9
+  previous (colnorm, no Sinkhorn, alpha x 1, no loudness)
+                                   28.7% / 65.9% /  7.2
 
     python -m src.xsubj.submit                             # ensemble, sub-01..06
     python -m src.xsubj.submit --model ridge               # pooled ridge only (fits on all trn splits)
@@ -31,7 +36,7 @@ import numpy as np
 
 from src.xsubj.eeg.dataset import Trials
 from src.xsubj.eeg.preprocess import load_preprocessed
-from src.xsubj.metrics import similarity
+from src.xsubj.metrics import cosine_term, similarity, sinkhorn
 from src.xsubj.nets.ridge import RidgeDecoder
 from src.xsubj.train import embed, load_checkpoint
 from src.xsubj.utils import get_device, load_config, resolve, seed_everything
@@ -129,6 +134,15 @@ def main():
             extra.append((v["name"], v["weight"], pooled, own, vb.emb[vb.lookup(CANDIDATES.astype(str))]))
             print(f"saved {folder} (extra vote {v['name']}, weight {v['weight']})")
 
+    a = cfg["submit"].get("pooled_weight", 1.0)  # weight of each pooled ridge next to the per-subject ridge
+    scoring = cfg["submit"].get("scoring", {})
+    cosine = scoring.get("terms", "colnorm") == "cosine"
+    tau = scoring.get("sinkhorn_tau")
+    term = (lambda p, cand: cosine_term(p, cand)) if cosine else (lambda p, cand: similarity(p, cand, args.col_norm))
+    print(f"scoring: {'cosine terms' if cosine else 'col-norm terms'}"
+          f"{f', Sinkhorn tau {tau}' if tau else ''}; ridge alpha_scale {cfg['ridge'].get('alpha_scale', 1.0)}, "
+          f"pooled ridge weight {a}")
+
     out = resolve(args.out)
     out.mkdir(parents=True, exist_ok=True)
     for subject in args.subjects:
@@ -139,16 +153,18 @@ def main():
                            for m, lut in encoders], 0)
             preds.append(enc / np.linalg.norm(enc, axis=1, keepdims=True))
         if args.model in ("ridge", "ensemble"):
-            preds.append(ridge.predict(d.X))
+            preds.append(a * ridge.predict(d.X))
         if args.model in ("subject-ridge", "ensemble"):
             preds.append(subject_ridge[subject].predict(d.X))
         sim = 0
         if preds:
             pred = np.sum(preds, 0)
             pred /= np.linalg.norm(pred, axis=1, keepdims=True)
-            sim = w_image * similarity(pred, cand_emb, args.col_norm)
+            sim = w_image * term(pred, cand_emb)
         for _, w, pooled, own, cand in extra:
-            sim = sim + w * similarity(pooled.predict(d.X) + own[subject].predict(d.X), cand, args.col_norm)
+            sim = sim + w * term(a * pooled.predict(d.X) + own[subject].predict(d.X), cand)
+        if tau:
+            sim = sinkhorn(sim, tau)
         ranked = ranked_candidates(sim).astype(np.int64)
         np.save(out / f"{subject}_ranked_candidate_list.npy", ranked)
         truth, note = (d.video_id.astype(int) if d.video_id is not None else None), ""
