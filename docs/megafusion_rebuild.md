@@ -354,3 +354,37 @@ Sinkhorn vs ranks + Sinkhorn: top-1 +33/-24 (p = 0.29), top-5 +15/-18 (p = 0.73)
 p = 0.12, not significant, and its tau varied more between folds (0.1-0.5). So the gain
 comes from Sinkhorn, not from scores; the submission keeps rank fusion + Sinkhorn
 (fewer moving parts: sub-05/06 need no new score dumps).
+
+## 10. Transfers toward fc6 / VideoMAE-l8, and weights chosen with Sinkhorn on (18 Oct)
+
+The transfer members (5-8) are InfoNCE models of the other dev subjects toward CLIP only.
+Same models toward the RSA-chosen targets (`src.cross_subject_probe`, banks of section 5):
+
+```bash
+for t in alexnet-fc6 videomae-l8; do python -m src.cross_subject_probe --data-dir $D \
+    --emb-train work/emb_train__$t.npz --emb-test work/emb_test__$t.npz --test-subs 01 02 03 04 05 06; done
+python -m src.loo_extra_member --transfers emb_train__alexnet-fc6_s0 emb_train__videomae-l8_s0 --sinkhorn 3
+```
+
+Alone (mean of the 12 dev transfer cells): CLIP 3.68 / 12.99, fc6 3.51 / 14.05, VideoMAE-l8
+3.84 / 14.22. Unlike the per-subject members, a better target barely helps a transfer: the
+limit is the mismatch between subjects, which Daniel's subject layer (members 11-12)
+handles. As a group with one shared weight, added to the candidate with Sinkhorn (tau 3,
+weights searched with Sinkhorn on): candidate 33.33 / 66.91 / 6.49; + fc6 transfers 33.09 /
+65.93 / 6.39; + VideoMAE transfers 32.60 / 67.16 / 6.46 (weight 0 in 3 of 4 folds); all
+paired p > 0.3. Not added.
+
+**Weights chosen with Sinkhorn on.** Section 8 chose the weights on the plain fusion, then
+tau. Choosing the weights with Sinkhorn already applied (tau fixed; LOO over the weights):
+
+| tau | LOO top-1 | top-5 | mean rank | vs plain: top-1 | top-5 | rank |
+|---|---|---|---|---|---|---|
+| plain | 29.41 | 63.24 | 7.87 | | | |
+| 2 | 30.39 | 66.42 | 6.49 | +49/-45, p = 0.76 | p = 0.10 | p = 3e-7 |
+| 3 | 33.33 | 66.91 | 6.49 | +55/-39, p = 0.12 | p = 0.044 | p = 9e-11 |
+| 5 | 29.90 | 67.89 | 6.36 | +45/-43, p = 0.92 | p = 0.007 | p = 2e-10 |
+
+The 33.3% top-1 appears at tau 3 only, so it is a lucky peak, not a robust gain (tau 3 was
+also picked by looking at all four dev subjects). What holds at every tau is the top-5 and
+mean-rank gain. Chosen new-member weights at tau 3: 9:9:9:9 in all folds, vs 5:9:9:9; the
+difference is one weight, so the submission keeps 5:9:9:9 (already checked end to end).
