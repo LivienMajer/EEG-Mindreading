@@ -113,6 +113,7 @@ response removed. One RDM per subject (correlation distance over 17 channels x 5
 | `alexnet_conv1..5`, `alexnet_fc6/7` | image network, early to deep layers | torchvision AlexNet `IMAGENET1K_V1` |
 | `clip_vitb32_daniel` | image-text model (semantic) | OpenCLIP `ViT-B-32` / `openai` (open_clip 3.3.0), mean of 8 frames; Daniel's `models/xsubj/features/clip_vitb32.npz` |
 | `videomae_l4/l8/l12` | video model (sees motion), early/middle/top layer | `MCG-NJU/videomae-base-finetuned-kinetics` |
+| `vjepa2_l6/l12/l18/l24` | self-supervised video world model (predicts masked video in feature space), layers 6-24 of 24 | `facebook/vjepa2-vitl-fpc64-256` (V-JEPA 2 ViT-L, Meta 2025), 16 frames, mean over tokens |
 | `clap_audio` | audio model (sound meaning) | `laion/clap-htsat-unfused` (same weights as `laion_clap` default) |
 
 Statistics: Spearman r between model RDM and each subject's RDM, averaged over subjects;
@@ -131,6 +132,8 @@ git show origin/feature/clip-lowlevel-forward-model:models/xsubj/features/clip_v
 # 2. all other features for the 1102 videos (~45 min, VideoMAE is most of it)
 python -m eeg_pipeline.rsa_features --stim_dir data --out_dir work/rsa_features \
     --models lowlevel alexnet videomae audio
+#    V-JEPA 2 (~2.5 h, 8.4 s/video; progress is saved every 25 videos, a rerun resumes)
+python -m eeg_pipeline.rsa_features --stim_dir data --out_dir work/rsa_features --models vjepa2
 # 3. channel order check (~30 s)
 python -m eeg_pipeline.check_channel_order --data_dir data
 # 4. RSA over time + per electrode group (~6 min), robustness without silent videos (~2 min)
@@ -143,7 +146,8 @@ python -m eeg_pipeline.rsa --data_dir data --features work/rsa_features work/cli
 noise ceiling), `rsa_summary.csv` (peak time, peak r, % of ceiling, significant span),
 `rsa_model_overlap.csv` (how much the models agree with each other),
 `rsa_hierarchy_test.txt` (early vs deep layers), `rsa_groups.csv`
-(per electrode group), and the same with suffix `_with_sound` for the robustness run.
+(per electrode group), and the same with suffix `_with_sound` for the robustness run
+(run before V-JEPA 2 was added, so without it; adding it leaves all other rows unchanged).
 Verified with Python 3.11.17, numpy 2.4.6, scipy 1.17.1, torch 2.14.1 (CPU),
 torchvision 0.29.1, transformers 5.20.1, av 18.1.0, decord 0.6.0, mne 1.13.2.
 
@@ -172,6 +176,12 @@ torchvision 0.29.1, transformers 5.20.1, av 18.1.0, decord 0.6.0, mne 1.13.2.
   as AlexNet's deep layers; its top layer (l12, tuned to action classes) is the weakest
   model (0.012). CLIP is in between (0.026 at 265 ms). A video model that sees motion is
   not more brain-like than an image network here, and motion energy alone is weak.
+- **A video world model is not more brain-like either:** V-JEPA 2 (ViT-L, self-supervised
+  on video) is best at layer 18 (r 0.030 at 225 ms, 101% of the ceiling), below AlexNet
+  fc6 (0.036) and VideoMAE-l8 (0.035); layers 6/12/24: 0.022 / 0.027 / 0.024. Its RDMs
+  overlap most with VideoMAE-l8 (r 0.62 for l18), less with fc6 (0.47). Given the link
+  between RSA and decoding (below), a decoder trained toward it is expected to land
+  between CLIP and fc6, so it was not added to the megafusion.
 - **Sound:** loudness over time matches the brain as well as the best visual features
   (r 0.027 at 125 ms, ~100% of the ceiling; peak at the latency of the auditory N1,
   Näätänen & Picton 1987),
