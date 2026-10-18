@@ -81,7 +81,7 @@ training or feature extraction is needed. The first run preprocesses the EEG onc
 
 Tested from a fresh clone with a fresh Python 3.11.15 environment from `requirements.txt` (CPU, about 5 min):
 the dev scores and sub-05 match exactly; sub-06 differs only by two swaps of neighbouring candidates at
-ranks 82–85 (floating-point near-ties), with identical top-1 and top-5 in every row.
+ranks 82–85 (floating-point near-ties).
 
 Retraining (optional): the commands for the 9 CLIP encoders are listed under `submit:` in
 [configs/xsubj.yaml](configs/xsubj.yaml). The InfoNCE votes are retrained with:
