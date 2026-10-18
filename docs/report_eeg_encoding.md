@@ -12,8 +12,10 @@ EEG ──► preprocessing ──► EEG encoder (trained, this section) ─►
 
 | | Dev: sub-01 to sub-04 |
 |---|---|
-| **Submission: 3 image votes + audio vote** | **19.9 % / 48.8 % / 10.8** |
-| 3 image votes only | 17.6 % / 47.8 % / 11.5 |
+| **Submission: ridge votes into AlexNet conv3 + VideoMAE layer 8 + CLAP audio** | **23.5 % / 55.6 % / 9.0** |
+| Runner-up: CLIP image ensemble + the same three votes | 27.2 % / 62.7 % / 7.5 |
+| CLIP image ensemble (9 encoders + 2 ridges) + audio | 19.9 % / 48.8 % / 10.8 |
+| CLIP image ensemble only | 17.6 % / 47.8 % / 11.5 |
 | 3 image votes, earlier preprocessing (band-pass + average reference) | 13.2 % / 43.1 % / 14.2 |
 | Organisers' baseline (AlexNet forward model, sub-01 only) | 3.9 % / 11.8 % / – |
 | Chance | 1.0 % / 4.9 % / 51.5 |
@@ -178,23 +180,40 @@ Late frames are significantly worse than early ones, consistent with an onset re
 | E + P + S | 17.6 % / 47.8 % / 11.5 |
 | E + P + S, no per-candidate normalisation | 17.2 % / 43.6 % / 13.1 |
 | E + P + S + audio, w = 0.5 (CV choice) | 18.9 % / 46.8 % / 11.2 |
-| **E + P + S + audio, w = 0.3 (submission)** | **19.9 % / 48.8 % / 10.8** |
+| **E + P + S + audio, w = 0.3 (earlier submission)** | **19.9 % / 48.8 % / 10.8** |
 | Audio only | 4.9 % / 21.1 % / 25.7 |
 
 
-## 7. Final configuration
+## 7. Mid-level video features as targets
 
-The submission sums three image votes with equal weight in CLIP space and adds the audio vote, with per-candidate normalisation:
+Following the team's RSA finding (brain-likeness of an embedding predicts how well EEG decodes toward it; AlexNet fc6 and VideoMAE layer 8 match the EEG best), each layer of AlexNet (torchvision `IMAGENET1K_V1`, conv1–fc7, 8 frames) and VideoMAE (`MCG-NJU/videomae-base-finetuned-kinetics`, layers 4/8/12, 16 frames), extracted with the team's `eeg_pipeline/rsa_features.py`, was used as the target of a ridge vote (pooled + per-subject):
 
-1. **9 neural encoders** (5× ShallowConvNet, 3× MLP, 1× EEGNet), averaged into one vote
-2. **Pooled ridge** on all six subjects' training splits
-3. **Per-subject ridge** on the subject's own training split
-4. **Audio ridge** (pooled + per-subject) into CLAP space, weight 0.3
+| Ridge target alone | Dev top-1 / top-5 / rank |
+|---|---|
+| CLIP image ensemble (9 encoders + 2 ridges) | 17.6 % / 47.8 % / 11.5 |
+| AlexNet conv1 | 10.0 % / 31.1 % / 18.6 |
+| AlexNet conv3 | 13.2 % / 44.4 % / 13.4 |
+| AlexNet conv5 | 19.4 % / 46.8 % / 10.6 |
+| AlexNet fc6 | 19.4 % / 52.2 % / 10.7 |
+| AlexNet fc7 | 13.7 % / 51.5 % / 10.3 |
+
+A single ridge into AlexNet conv5 or fc6 space matches the whole CLIP ensemble on the dev subjects. Mid-level visual features are a much better target for these EEG recordings than a semantic image–text embedding, and they transfer better to new subjects.
+
+
+## 8. Final configuration
+
+The submission ranks candidates by the weighted sum of three ridge votes, each a pooled ridge (all six subjects' training splits) plus a per-subject ridge, with per-candidate normalisation:
+
+1. **AlexNet conv3** space, weight 2.0
+2. **VideoMAE layer 8** space, weight 1.0
+3. **CLAP audio** space, weight 0.5
 
 | | sub-01 | sub-02 | sub-03 | sub-04 | Dev mean |
 |---|---|---|---|---|---|
-| Top-1 | 19.6 % | 18.6 % | 18.6 % | 22.5 % | **19.9 %** |
-| Top-5 | 50.0 % | 50.0 % | 49.0 % | 46.1 % | **48.8 %** |
+| Top-1 | 26.5 % | 22.5 % | 19.6 % | 25.5 % | **23.5 %** |
+| Top-5 | 54.9 % | 55.9 % | 50.0 % | 61.8 % | **55.6 %** |
+
+The neural encoders and the CLIP ridges (sections 2–4) are not part of this submission; they remain in the runner-up configuration.
 
 Preprocessing: 40 Hz low-pass (no high-pass), no average reference, 0–1 s window, 100 Hz, removal of each split's mean response, scaling, clipping at ±6 SD, Euclidean alignment (all label-free, per subject and split). Against the earlier ridge + 9 encoders submission, adding the per-subject ridge improved top-5 and mean rank significantly; the preprocessing change then improved the mean rank significantly again (section 5).
 
@@ -208,6 +227,9 @@ python -m src.xsubj.sweep_preprocess          # preprocessing sweep (section 5)
 python -m src.xsubj.video.foundation_features --model clap --stim <stimuli_train> <stimuli_test> \
     --out models/xsubj/features/clap         # CLAP audio embeddings (versioned already)
 python -m src.xsubj.audio_member              # audio vote as a megafusion member (ranking files)
+# AlexNet / VideoMAE layer features (versioned: alexnet_conv3, videomae_l8), from branch feature/eeg-preprocessing:
+python -m eeg_pipeline.rsa_features --stim_dir data/eeg-mind-reading-challenge \
+    --out_dir models/xsubj/features/rsa --models alexnet videomae
 ```
 
 
@@ -227,5 +249,6 @@ The training commands for each encoder are listed under `submit:` in `configs/xs
 2. At this data size, a **linear model beats deep networks**; the networks only help as additional, differently-erring ensemble members.
 3. **Subject-specific models matter more than more data**: per-subject ridge on ~950 trials beats pooled ridge on 5,650, and combining both is best.
 4. **Less preprocessing is better**: a high-pass filter and average referencing remove stimulus information; only a 40 Hz low-pass, label-free per-split normalisation and Euclidean alignment help.
-5. **The brain also encodes the sound**, and audio decoding transfers to new subjects better than visual decoding; as a weak separate vote it adds most where the image votes are weakest.
+5. **Mid-level visual features are the right target**: ridge into AlexNet conv3–fc7 or VideoMAE layer 8 beats the CLIP ensemble, especially on new subjects.
+6. **The brain also encodes the sound**, and audio decoding transfers to new subjects better than visual decoding; as a weak separate vote it adds most where the image votes are weakest.
 6. **Careful statistics are part of the method**: with 102 candidates and 408 recordings, paired tests and cross-validated choices separate real gains from noise.

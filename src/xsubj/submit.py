@@ -5,17 +5,16 @@ in its original order, holding the 102 candidate video IDs (1001..1102) from mos
 likely. Subjects with tst_stim labels (sub-01..04) are scored with the organisers' formula,
 which checks the format end to end.
 
-Default model: ensemble of three equal votes in CLIP space plus a weighted audio vote:
-  1. the mean of the encoders listed under `submit.encoders` (5x ShallowConvNet, 3x MLP, 1x EEGNet)
-  2. pooled ridge, trained on the trn splits of all six subjects
-  3. per-subject ridge, trained on the subject's own trn split only
-  4. audio: pooled + per-subject ridge into the CLAP space of each video's sound track
-Votes 1-3 are summed in CLIP space; ranking uses S_image + w * S_audio, both after per-candidate
-normalisation, with w = `submit.audio_weight` (0.3).
-                     dev sub-01..04
-  votes 1-3            17.6% / 47.8% / 11.5   (top-1 / top-5 / mean rank)
-  + audio, w = 0.3     19.9% / 48.8% / 10.8
-alone picks w = 0.5 (dev 18.9% / 46.8% / 11.2, held-out 11.3% / 33.8% / 17.8).
+Ranking: S = image_weight * S_image + sum_k weight_k * S_k, every term per-candidate normalised.
+  S_image: CLIP image ensemble = mean of the encoders under `submit.encoders` (5x ShallowConvNet,
+           3x MLP, 1x EEGNet) + pooled ridge (trn of all six subjects) + per-subject ridge
+  S_k:     `submit.extra_votes`, each a pooled + per-subject ridge into another target space
+Default (configs/xsubj.yaml): image_weight 0; AlexNet conv3 2.0, VideoMAE layer 8 1.0, CLAP audio 0.5.
+                                   dev sub-01..04   (top-1 / top-5 / rank)
+  default                          23.5% / 55.6% /  9.0
+  runner-up: image_weight 1, audio 0.5, conv3 2, l8 2
+                                   27.2% / 62.7% /  7.5
+  CLIP image ensemble only         17.6% / 47.8% / 11.5
 
     python -m src.xsubj.submit                             # ensemble, sub-01..06
     python -m src.xsubj.submit --model ridge               # pooled ridge only (fits on all trn splits)
@@ -66,13 +65,16 @@ def main():
                     help="z-score each candidate's similarities over the subject's test recordings "
                          "(paired test on sub-01..04: top-1 21 vs 23 recordings, top-5 35 vs 26, "
                          "mean rank 17.7 -> 16.8; default on)")
-    ap.add_argument("--audio-weight", type=float, default=None,
-                    help="weight of the audio vote in the ensemble (default: submit.audio_weight; 0 = off)")
+    ap.add_argument("--extra-votes", action=argparse.BooleanOptionalAction, default=True,
+                    help="add the ridge votes listed under submit.extra_votes (ensemble only)")
     ap.add_argument("--out", default="submissions")
     args = ap.parse_args()
 
     import torch
     cfg = load_config(args.config)
+    w_image = cfg["submit"].get("image_weight", 1.0) if args.model == "ensemble" else 1.0
+    if w_image == 0:  # ensemble of the extra ridge votes only: encoders and CLIP ridges are not needed
+        args.model = "extra-only"
     names = args.encoders or cfg["submit"]["encoders"]
     paths = [resolve("models/xsubj/checkpoints") / n / "model.pt" for n in names]
     if args.model in ("encoder", "ensemble"):
@@ -111,21 +113,21 @@ def main():
         path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump({"models": subject_ridge, "cfg": cfg}, path)
         print(f"saved {path} ({len(subject_ridge)} subjects)")
-    w_audio = args.audio_weight if args.audio_weight is not None else cfg["submit"].get("audio_weight", 0.0)
-    if args.model != "ensemble":
-        w_audio = 0.0
-    if w_audio:  # pooled + per-subject ridge into CLAP space (src.xsubj.audio_member)
-        aud = VideoBank(*_load_file(cfg["submit"]["audio_emb"]), standardize=True)
+    extra = []  # (name, weight, pooled ridge, {subject: ridge}, candidate embeddings) per extra target space
+    if args.model in ("ensemble", "extra-only") and args.extra_votes:
         trn = [d for d in data if d.split == "trn"]
-        audio_pooled = RidgeDecoder(cfg["ridge"], fs, tmin).fit(
-            np.concatenate([d.X for d in trn]), aud.emb[aud.lookup(np.concatenate([d.video_id for d in trn]))])
-        audio_subject = {d.subject: RidgeDecoder(cfg["ridge"], fs, tmin).fit(d.X, aud.emb[aud.lookup(d.video_id)])
-                         for d in trn}
-        path = resolve("models/xsubj/checkpoints/ridge_audio/ridge_audio.joblib")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        joblib.dump({"pooled": audio_pooled, "subject": audio_subject, "cfg": cfg}, path)
-        cand_audio = aud.emb[aud.lookup(CANDIDATES.astype(str))]
-        print(f"saved {path} (audio vote, weight {w_audio})")
+        for v in cfg["submit"].get("extra_votes", []):
+            vb = VideoBank(*_load_file(v["emb"]), standardize=True)
+            pooled = RidgeDecoder(cfg["ridge"], fs, tmin).fit(
+                np.concatenate([d.X for d in trn]), vb.emb[vb.lookup(np.concatenate([d.video_id for d in trn]))])
+            own = {d.subject: RidgeDecoder(cfg["ridge"], fs, tmin).fit(d.X, vb.emb[vb.lookup(d.video_id)]) for d in trn}
+            folder = resolve(f"models/xsubj/checkpoints/ridge_{v['name']}")  # one file per model: GitHub's
+            folder.mkdir(parents=True, exist_ok=True)                        # 100 MB limit (AlexNet conv3)
+            joblib.dump({"model": pooled, "emb": v["emb"], "cfg": cfg}, folder / "pooled.joblib")
+            for s, r in own.items():
+                joblib.dump({"model": r, "emb": v["emb"], "cfg": cfg}, folder / f"{s}.joblib")
+            extra.append((v["name"], v["weight"], pooled, own, vb.emb[vb.lookup(CANDIDATES.astype(str))]))
+            print(f"saved {folder} (extra vote {v['name']}, weight {v['weight']})")
 
     out = resolve(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -140,12 +142,13 @@ def main():
             preds.append(ridge.predict(d.X))
         if args.model in ("subject-ridge", "ensemble"):
             preds.append(subject_ridge[subject].predict(d.X))
-        pred = np.sum(preds, 0)
-        pred /= np.linalg.norm(pred, axis=1, keepdims=True)
-        sim = similarity(pred, cand_emb, args.col_norm)
-        if w_audio:
-            a = audio_pooled.predict(d.X) + audio_subject[subject].predict(d.X)
-            sim = sim + w_audio * similarity(a, cand_audio, args.col_norm)
+        sim = 0
+        if preds:
+            pred = np.sum(preds, 0)
+            pred /= np.linalg.norm(pred, axis=1, keepdims=True)
+            sim = w_image * similarity(pred, cand_emb, args.col_norm)
+        for _, w, pooled, own, cand in extra:
+            sim = sim + w * similarity(pooled.predict(d.X) + own[subject].predict(d.X), cand, args.col_norm)
         ranked = ranked_candidates(sim).astype(np.int64)
         np.save(out / f"{subject}_ranked_candidate_list.npy", ranked)
         truth, note = (d.video_id.astype(int) if d.video_id is not None else None), ""
