@@ -13,6 +13,10 @@ Feature sets (all public, released before the hackathon):
              say which simple property the brain tracks.
   alexnet    torchvision AlexNet (IMAGENET1K_V1), ReLU outputs of conv1..conv5 average-
              pooled to 4x4, plus fc6/fc7; mean over 8 frames.
+  clip       OpenCLIP ViT-B-32 / openai (open_clip 3.3.0, the model of Daniel's clip_vitb32.npz):
+             tokens mean-pooled after transformer blocks 3, 6, 9 and 12 of 12 (before the
+             final projection), plus clip_final = the L2-normalized image embedding (which
+             should reproduce Daniel's file); mean over 8 frames.
   videomae   MCG-NJU/videomae-base-finetuned-kinetics (VideoMAE, 2022): 16 frames as one
              clip, tokens mean-pooled at transformer layers 4, 8 and 12. The only model
              here that sees motion over time.
@@ -36,6 +40,8 @@ from decord import VideoReader, cpu
 
 N_FRAMES_LOW = 16
 N_FRAMES_IMG = 8
+CLIP = ('ViT-B-32', 'openai')
+CLIP_LAYERS = (3, 6, 9, 12)
 VIDEOMAE = 'MCG-NJU/videomae-base-finetuned-kinetics'
 VIDEOMAE_LAYERS = (4, 8, 12)
 VJEPA2 = 'facebook/vjepa2-vitl-fpc64-256'
@@ -117,6 +123,26 @@ def alexnet_encoder():
     return encode
 
 
+def clip_encoder():
+    import open_clip
+    from PIL import Image
+    model, _, prep = open_clip.create_model_and_transforms(*CLIP)
+    model.eval()
+    blocks = model.visual.transformer.resblocks
+    hs = {}
+    for k in CLIP_LAYERS:                        # output of transformer block k (1-based)
+        blocks[k - 1].register_forward_hook(lambda m, i, o, k=k: hs.__setitem__(k, o))
+
+    @torch.no_grad()
+    def encode(frames):
+        x = torch.stack([prep(Image.fromarray(f)) for f in frames])
+        emb = F.normalize(model.encode_image(x), dim=-1)      # as Daniel's clip_vitb32.npz
+        out = {f'clip_l{k}': hs[k].mean((0, 1)) for k in CLIP_LAYERS}   # tokens, then frames
+        out['clip_final'] = emb.mean(0)
+        return {k: v.numpy() for k, v in out.items()}
+    return encode
+
+
 def videomae_encoder():
     from transformers import VideoMAEImageProcessor, VideoMAEModel
     proc = VideoMAEImageProcessor.from_pretrained(VIDEOMAE)
@@ -169,7 +195,7 @@ def main(argv=None):
     ap.add_argument('--stim_dir', required=True)
     ap.add_argument('--out_dir', default='work/rsa_features')
     ap.add_argument('--models', nargs='+', default=['lowlevel', 'alexnet', 'videomae'],
-                    choices=['lowlevel', 'alexnet', 'videomae', 'vjepa2', 'audio'])
+                    choices=['lowlevel', 'alexnet', 'clip', 'videomae', 'vjepa2', 'audio'])
     ap.add_argument('--limit', type=int, default=None, help='first N videos only (timing test)')
     args = ap.parse_args(argv)
 
@@ -180,7 +206,7 @@ def main(argv=None):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     for model in args.models:
-        encode = {'lowlevel': lowlevel, 'alexnet': alexnet_encoder,
+        encode = {'lowlevel': lowlevel, 'alexnet': alexnet_encoder, 'clip': clip_encoder,
                   'videomae': videomae_encoder, 'vjepa2': vjepa2_encoder,
                   'audio': audio_encoder}[model]
         encode = encode if model == 'lowlevel' else encode()

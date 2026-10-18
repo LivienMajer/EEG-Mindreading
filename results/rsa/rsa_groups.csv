@@ -17,6 +17,10 @@ occipital,O1 Oz O2 POz,videomae_l4,85,0.02307,1
 occipital,O1 Oz O2 POz,videomae_l8,225,0.02368,1
 occipital,O1 Oz O2 POz,videomae_l12,85,0.00927,1
 occipital,O1 Oz O2 POz,clap_audio,105,0.01895,1
+occipital,O1 Oz O2 POz,clip_l12,205,0.02088,1
+occipital,O1 Oz O2 POz,clip_l3,85,0.02788,1
+occipital,O1 Oz O2 POz,clip_l6,85,0.02379,1
+occipital,O1 Oz O2 POz,clip_l9,205,0.02179,1
 occipital,O1 Oz O2 POz,vjepa2_l12,85,0.02030,1
 occipital,O1 Oz O2 POz,vjepa2_l18,145,0.02103,1
 occipital,O1 Oz O2 POz,vjepa2_l24,165,0.01838,1
@@ -39,6 +43,10 @@ left_lateral,P7 P5 PO7 P3,videomae_l4,205,0.01621,1
 left_lateral,P7 P5 PO7 P3,videomae_l8,205,0.02110,1
 left_lateral,P7 P5 PO7 P3,videomae_l12,165,0.00892,1
 left_lateral,P7 P5 PO7 P3,clap_audio,105,0.01781,1
+left_lateral,P7 P5 PO7 P3,clip_l12,205,0.02113,1
+left_lateral,P7 P5 PO7 P3,clip_l3,185,0.01662,0
+left_lateral,P7 P5 PO7 P3,clip_l6,205,0.02027,1
+left_lateral,P7 P5 PO7 P3,clip_l9,205,0.02163,1
 left_lateral,P7 P5 PO7 P3,vjepa2_l12,205,0.01762,1
 left_lateral,P7 P5 PO7 P3,vjepa2_l18,205,0.01890,1
 left_lateral,P7 P5 PO7 P3,vjepa2_l24,205,0.01629,1
@@ -61,6 +69,10 @@ right_lateral,P8 P6 PO8 P4,videomae_l4,205,0.01698,1
 right_lateral,P8 P6 PO8 P4,videomae_l8,225,0.02479,1
 right_lateral,P8 P6 PO8 P4,videomae_l12,165,0.00784,0
 right_lateral,P8 P6 PO8 P4,clap_audio,105,0.02008,1
+right_lateral,P8 P6 PO8 P4,clip_l12,225,0.02308,1
+right_lateral,P8 P6 PO8 P4,clip_l3,185,0.01628,1
+right_lateral,P8 P6 PO8 P4,clip_l6,205,0.02162,1
+right_lateral,P8 P6 PO8 P4,clip_l9,225,0.02285,1
 right_lateral,P8 P6 PO8 P4,vjepa2_l12,205,0.01930,1
 right_lateral,P8 P6 PO8 P4,vjepa2_l18,205,0.02231,1
 right_lateral,P8 P6 PO8 P4,vjepa2_l24,205,0.01759,1
@@ -83,6 +95,10 @@ midline_parietal,Pz P1 P2 PO3 PO4,videomae_l4,205,0.01701,1
 midline_parietal,Pz P1 P2 PO3 PO4,videomae_l8,225,0.02315,1
 midline_parietal,Pz P1 P2 PO3 PO4,videomae_l12,285,0.00720,1
 midline_parietal,Pz P1 P2 PO3 PO4,clap_audio,245,0.01280,1
+midline_parietal,Pz P1 P2 PO3 PO4,clip_l12,225,0.02036,1
+midline_parietal,Pz P1 P2 PO3 PO4,clip_l3,205,0.01571,1
+midline_parietal,Pz P1 P2 PO3 PO4,clip_l6,225,0.01964,1
+midline_parietal,Pz P1 P2 PO3 PO4,clip_l9,225,0.02113,1
 midline_parietal,Pz P1 P2 PO3 PO4,vjepa2_l12,225,0.01803,1
 midline_parietal,Pz P1 P2 PO3 PO4,vjepa2_l18,225,0.02017,1
 midline_parietal,Pz P1 P2 PO3 PO4,vjepa2_l24,225,0.01597,1

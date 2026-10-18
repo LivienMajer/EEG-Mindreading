@@ -290,7 +290,7 @@ def main(argv=None):
 
 def plot(t, curves, lo, up, path):
     """Panels: simple features, the AlexNet hierarchy, image/video/audio models, and (if
-    present) the V-JEPA 2 layers next to VideoMAE-l8 and AlexNet fc6.
+    present) the CLIP and V-JEPA 2 layers next to VideoMAE-l8 and AlexNet fc6.
     Only the lower noise ceiling is drawn: with single-trial RDMs the upper bound is
     inflated (each subject is partly compared with itself) and carries no information."""
     import matplotlib
@@ -304,12 +304,17 @@ def plot(t, curves, lo, up, path):
          [n for n in ('alexnet_conv2', 'alexnet_fc6', 'clip_vitb32_daniel', 'videomae_l4',
                       'videomae_l8', 'videomae_l12', 'clap_audio') if n in curves], None),
     ]
+    clip = sorted((n for n in curves if n.startswith('clip_l')), key=lambda n: int(n.split('_l')[-1]))
+    if clip:
+        panels.append(('CLIP ViT-B/32: blocks 3 to 12, and output',
+                       [n for n in ('alexnet_fc6', 'clip_vitb32_daniel') if n in curves] + clip, None))
     if vjepa:
         panels.append(('Video world model: V-JEPA 2 layers',
                        [n for n in ('alexnet_fc6', 'videomae_l8') if n in curves] + vjepa, None))
     fixed = {'alexnet_conv2': 'tab:cyan', 'alexnet_fc6': 'tab:blue', 'clip_vitb32_daniel': 'tab:red',
              'videomae_l4': '#c9a3e6', 'videomae_l8': '#8e44ad', 'videomae_l12': '#4a235a',
              'clap_audio': 'tab:orange'}
+    fixed.update({n: plt.get_cmap('Reds')(0.3 + 0.55 * (i + 1) / len(clip)) for i, n in enumerate(clip)})
     fixed.update({n: plt.get_cmap('YlOrBr')(0.35 + 0.65 * (i + 1) / len(vjepa)) for i, n in enumerate(vjepa)})
     top = max(max(c[0].max() for c in curves.values()), lo.max()) * 1.15
     fig, axes = plt.subplots(1, len(panels), figsize=(6 * len(panels), 5.2), sharey=True)
