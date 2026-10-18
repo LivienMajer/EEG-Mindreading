@@ -27,6 +27,8 @@ retrained checkpoint), --extra-tags adds work/prep_variants/A<tag>_XX_s0.npy dum
 (original tst order for 05/06) with --extra-weights, --out-dir keeps candidates apart:
   python -m src.make_submission --data-dir <root> --ed-dir work/ed_member_5e3154e \
       --extra-tags _fc6 _vmae8 _dfc6 _dvmae8 --extra-weights 5 9 9 9 --out-dir work/submission_candidate
+--sinkhorn TAU re-ranks the fused mean ranks with Sinkhorn normalisation (src/sinkhorn.py; LOO:
+tau = 2); without it the output is unchanged.
 """
 
 from __future__ import annotations
@@ -42,6 +44,8 @@ from .bench_embeddings import (corr_match, fit_forward, load_pooled,
 from .challenge_data import TEST_VIDEO_IDS, load_test_subject, load_train_subject
 from .contrastive_pipeline import build_target_space, eeg_window, rank_candidates
 from .ensemble_rank import fuse_mean_rank
+from .sinkhorn import mean_rank_matrix
+from .sinkhorn import rank as sinkhorn_rank
 
 CLIP = "emb_train__clip-vitb32"
 ALEX = "emb_train__alexnet-f3"
@@ -130,6 +134,8 @@ def main():
     ap.add_argument("--extra-tags", nargs="*", default=[], help="extra members A<tag>_XX_s0.npy")
     ap.add_argument("--extra-weights", nargs="*", type=float, default=[])
     ap.add_argument("--out-dir", default="submissions")
+    ap.add_argument("--sinkhorn", type=float, default=None, metavar="TAU",
+                    help="Sinkhorn re-ranking of the fused mean ranks (off by default; LOO: 2)")
     args = ap.parse_args()
     root = Path(args.data_dir)
     if len(args.extra_tags) != len(args.extra_weights):
@@ -148,10 +154,14 @@ def main():
         ]
         members += [transfer_member(sub, d, CLIP) for d in DEV]
         members += [np.load(f"work/prep_variants/A{t}_{sub}_s0.npy") for t in args.extra_tags]
-        fused = fuse_mean_rank(members, weights)
+        if args.sinkhorn is None:
+            fused = fuse_mean_rank(members, weights)
+        else:
+            fused = sinkhorn_rank(-mean_rank_matrix(members, weights), args.sinkhorn)
         path = out_dir / f"sub-{sub}_ranked_candidate_list.npy"
         np.save(path, fused.astype(np.int64))
-        print(f"sub-{sub}: fused {len(members)} members with weights {weights} -> {path}")
+        note = "" if args.sinkhorn is None else f", Sinkhorn tau {args.sinkhorn}"
+        print(f"sub-{sub}: fused {len(members)} members with weights {weights}{note} -> {path}")
 
 
 if __name__ == "__main__":
