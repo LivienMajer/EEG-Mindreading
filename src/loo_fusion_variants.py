@@ -18,6 +18,7 @@ Daniel alone on the same 408 recordings. Daniel's own weights were fitted on the
 subjects, so every variant containing him is optimistic by that much.
 
     python -m src.loo_fusion_variants
+    python -m src.loo_fusion_variants --daniel-tag _dnew2     # his second round, commit 9d756b8
 """
 
 from __future__ import annotations
@@ -40,9 +41,16 @@ def true_rank(ranked, y):
 
 
 def main():
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--daniel-tag", default="_dnew", help="Daniel's submission as a member (e.g. _dnew2 = 9d756b8)")
+    dtag = ap.parse_args().daniel_tag
     Y = {s: np.load(TST / f"truth_{s}_s0.npy") for s in SUBS}
     base = {s: old_members(s, TST, PROBE, "emb_train__clip-vitb32_s0", ED) for s in SUBS}   # clip alex ED ridge tr tr tr
-    ext = {s: {t: np.load(NEW / f"A{t}_{s}_s0.npy") for t in ("_fc6", "_vmae8", "_dfc6", "_dvmae8", "_dnew")} for s in SUBS}
+    ext = {s: {t: np.load(NEW / f"A{t}_{s}_s0.npy") for t in ("_fc6", "_vmae8", "_dfc6", "_dvmae8")} for s in SUBS}
+    for s in SUBS:
+        ext[s]["_dnew"] = np.load(NEW / f"A{dtag}_{s}_s0.npy")
+    print(f"Daniel's ensemble: member {dtag}")
     G = (0, 3, 5, 9)
 
     def members(s, ed=True, d11_12=True, dnew=False):
@@ -93,7 +101,7 @@ def main():
         print(f"[{name}] chosen on all four (for the submission): weights {':'.join(str(x) for x in w)}, tau {tau}", flush=True)
 
     dan = np.concatenate([true_rank(ext[s]["_dnew"], Y[s]) for s in SUBS])
-    results["Daniel alone (9d62e5b)"] = dan
+    results[f"Daniel alone ({dtag})"] = dan
     print("\nLOO held-out, sub-01..04 (408 recordings):")
     for k, x in results.items():
         print(f"  {k:26s} top-1 {np.mean(x == 1) * 100:5.2f}  top-5 {np.mean(x <= 5) * 100:5.2f}  mean rank {x.mean():.2f}")

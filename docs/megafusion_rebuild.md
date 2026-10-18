@@ -516,3 +516,30 @@ chance): the information is in the response to the video onset, which is also wh
 first frame alone is as good a target as the whole video. Loudness is a real brain signal
 in the RSA (which compares all pairs of videos over many trials) but too coarse to pick one
 video out of 102 from one recording: it mainly separates loud from quiet videos.
+
+## 14. Fusion B with Daniel's second round (commit 9d756b8): no gain over his ensemble alone
+
+Daniel's second round (Sinkhorn scoring, ridge alpha x 0.2, loudness vote, pooled ridge
+x 0.25) was replicated from a clean checkout: dev 40.9 / 74.8 / 4.85, and its sub-05/06
+files are bit-identical to the committed ones. As the member of fusion B:
+
+```bash
+git worktree add --detach ../dan-9d756b8 9d756b8
+(cd ../dan-9d756b8 && python -m src.xsubj.submit --out work/replication)
+python -m src.xsubj_member --src ../dan-9d756b8/work/replication --tag _dnew2 --data-dir $D
+python -m src.loo_fusion_variants --daniel-tag _dnew2
+```
+
+| Fusion (LOO held-out, sub-01..04) | top-1 | top-5 | mean rank |
+|---|---|---|---|
+| A current | 32.11 | 66.18 | 6.41 |
+| B with 9d756b8 | 42.65 | 75.25 | 4.67 |
+| C with 9d756b8 | 41.42 | 73.53 | 4.65 |
+| D blend with 9d756b8 | 42.16 | 75.49 | 4.56 |
+| 9d756b8 alone | 40.93 | 74.75 | 4.85 |
+
+B vs 9d756b8 alone: top-1 +48/-41 (p = 0.53), top-5 +26/-24 (p = 0.89), rank p = 0.065;
+C and D likewise n.s. Our per-subject members no longer add anything significant on top of
+his second round, which already contains Sinkhorn and the ridge settings that made the
+difference. 9d756b8 alone vs A: top-1 +85/-49 (p = 0.002), rank p = 5e-6. The simplest
+strong submission is therefore his ensemble on its own.
