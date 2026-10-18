@@ -33,6 +33,7 @@ from scipy.signal import decimate
 from .bench_embeddings import (KEY_TEMPLATE, HighDimPCA, load_pooled,
                                video_matrix_pooled)
 from .challenge_data import TEST_VIDEO_IDS, load_test_subject, load_train_subject
+from .member_weights import save_infonce
 from .score_dump import save_scores
 
 # snr-window result: 50-350 ms @100 Hz
@@ -284,6 +285,8 @@ def main():
     tst = load_test_subject(root, args.sub)
     E_tst = eeg_window(tst.X)
     ranked, S = rank_candidates(model, E_tst, X_cand, return_scores=True)
+    save_infonce(f"infonce_{args.sub}_{Path(args.emb_train).stem.replace('_pooled', '')}_s{args.seed}",
+                 model, E_tst, X_cand, args.embed_dim, prep=None, emb=args.emb_train)
 
     if tst.y is not None:
         order = np.argsort(tst.y)                 # eval order (label-sorted)

@@ -44,6 +44,7 @@ from .bench_embeddings import (corr_match, fit_forward, load_pooled,
 from .challenge_data import TEST_VIDEO_IDS, load_test_subject, load_train_subject
 from .contrastive_pipeline import build_target_space, eeg_window, rank_candidates
 from .ensemble_rank import fuse_mean_rank
+from .member_weights import save_ridge
 from .score_dump import save_scores
 from .sinkhorn import mean_rank_matrix
 from .sinkhorn import rank as sinkhorn_rank
@@ -119,6 +120,7 @@ def ridge_member(sub: str, emb_tag: str) -> np.ndarray:
     ranked = TEST_VIDEO_IDS[np.argsort(-S, axis=1)].astype(np.int64)
     np.save(f"work/tst_ranked/ridge_{sub}_{emb_tag}_s0.npy", ranked)
     save_scores(f"work/tst_ranked/ridge_{sub}_{emb_tag}_s0.npy", S)
+    save_ridge(sub, emb_tag, bundle, (5, 35))
     return ranked
 
 # ---------------------------------------------------------------------------

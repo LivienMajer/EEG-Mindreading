@@ -27,6 +27,7 @@ from sklearn.linear_model import RidgeCV
 from sklearn.preprocessing import StandardScaler
 
 from .challenge_data import TEST_VIDEO_IDS, load_test_subject, load_train_subject
+from .member_weights import save_ridge
 from .score_dump import save_scores
 
 # from snr_probe study: 50-350 ms @ 100 Hz wins; 50-600 as organizer reference
@@ -222,6 +223,7 @@ def main():
         emb_tag = Path(args.emb_train).stem.replace("_pooled", "")
         np.save(f"work/tst_ranked/ridge_{sub}_{emb_tag}_s0.npy", ranked)
         save_scores(f"work/tst_ranked/ridge_{sub}_{emb_tag}_s0.npy", S)
+        save_ridge(sub, emb_tag, bundle, t_win)
         np.save(f"work/tst_ranked/truth_{sub}_s0.npy", truth)
 
     print(f"\n=== {Path(args.emb_test).name} | agg={args.agg} | window={args.window} ===")
@@ -242,4 +244,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # run the imported copy, so saved ridge weights refer to src.bench_embeddings.HighDimPCA
+    # and not to __main__ (they could not be reloaded otherwise)
+    from src.bench_embeddings import main as _main
+    _main()

@@ -174,8 +174,15 @@ reproduce the results"), these must be committed if this submission is used (all
 git-ignored here, so `git add -f`): the encoders `models/xsubj/checkpoints/{fc6,vmae8}_*`,
 their ridges `models/xsubj/checkpoints/ridge_{fc6,vmae8}/` and
 `ridge_subject_{fc6,vmae8}/` (`src.xsubj.submit` now saves the ridges per config; before,
-every config overwrote `ridge/`, Daniel's CLIP ridge; rankings unchanged), and the
-transfer models `work/xsubj_probe/model_sub0[1-4]_emb_train__clip-vitb32_s0.pt`.
+every config overwrote `ridge/`, Daniel's CLIP ridge; rankings unchanged), the
+transfer models `work/xsubj_probe/model_sub0[1-4]_emb_train__clip-vitb32_s0.pt`, and the
+members trained inside the fusion scripts, which are now saved too (`src/member_weights.py`,
+`models/fusion/`, 40 MB): the per-subject InfoNCE networks of members 1, 2, 9, 10 (24
+checkpoints, sub-01..06; each with its EEG preprocessing and the candidate videos in its
+target space) and the per-subject ridges of member 4 (6). Rerunning the member scripts
+with saving on left all 248 ranking files and both sub-05/06 submissions bit-identical, and
+reloading each checkpoint reproduces its member's ranking exactly:
+`python -m src.check_member_weights --data-dir $D` (30 of 30).
 
 ## 5. Clean check of the member choice (no test data)
 

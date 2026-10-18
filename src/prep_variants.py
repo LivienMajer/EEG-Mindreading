@@ -39,6 +39,7 @@ from scipy import signal, stats
 
 from .challenge_data import TEST_VIDEO_IDS, load_test_subject, load_train_subject, zscore
 from .contrastive_pipeline import T_WIN, build_target_space, rank_candidates, train_infonce
+from .member_weights import save_infonce
 from .score_dump import save_scores
 
 VARIANTS = {
@@ -129,6 +130,8 @@ def run(args):
                                   epochs=args.epochs, lr=3e-4, temperature=0.1,
                                   seed=args.seed, log_every=50)
             ranked, S = rank_candidates(model, E_tst, X_cand, return_scores=True)
+            save_infonce(f"{name}{args.tag}_{sub}_s{args.seed}", model, E_tst, X_cand, 256,
+                         prep={**cfg, **({"R": R} if cfg["align"] == "train" else {})}, emb=str(args.emb))
             ranked = ranked[order]
             np.save(OUT / f"{name}{args.tag}_{sub}_s{args.seed}.npy", ranked)
             save_scores(OUT / f"{name}{args.tag}_{sub}_s{args.seed}.npy", S[order])
