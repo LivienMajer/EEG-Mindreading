@@ -29,6 +29,7 @@ import argparse
 import joblib
 import numpy as np
 
+from src.xsubj import infonce_member
 from src.xsubj.eeg.dataset import Trials
 from src.xsubj.eeg.preprocess import load_preprocessed
 from src.xsubj.metrics import similarity
@@ -68,6 +69,9 @@ def main():
     ap.add_argument("--extra-votes", action=argparse.BooleanOptionalAction, default=True,
                     help="add the ridge votes listed under submit.extra_votes (ensemble only)")
     ap.add_argument("--out", default="submissions")
+    ap.add_argument("--dump-scores", default=None,
+                    help="also save every vote's per-candidate normalised similarity table (unweighted) "
+                         "per subject to <dir>/<subject>.npz, rows in original recording order")
     args = ap.parse_args()
 
     import torch
@@ -142,13 +146,25 @@ def main():
             preds.append(ridge.predict(d.X))
         if args.model in ("subject-ridge", "ensemble"):
             preds.append(subject_ridge[subject].predict(d.X))
-        sim = 0
+        sim, votes = 0, {}
         if preds:
             pred = np.sum(preds, 0)
             pred /= np.linalg.norm(pred, axis=1, keepdims=True)
-            sim = w_image * similarity(pred, cand_emb, args.col_norm)
-        for _, w, pooled, own, cand in extra:
-            sim = sim + w * similarity(pooled.predict(d.X) + own[subject].predict(d.X), cand, args.col_norm)
+            votes["image"] = similarity(pred, cand_emb, args.col_norm)
+            sim = w_image * votes["image"]
+        for name, w, pooled, own, cand in extra:
+            votes[name] = similarity(pooled.predict(d.X) + own[subject].predict(d.X), cand, args.col_norm)
+            sim = sim + w * votes[name]
+        for v in (cfg["submit"].get("infonce_votes", []) if args.model == "ensemble" else []):
+            # per-subject InfoNCE EEGNets (src.xsubj.infonce_member) on the raw test EEG, seed-averaged
+            raw = infonce_member.load_test(resolve(cfg["data"]["challenge_dir"]), subject)
+            votes[f"infonce_{v['name']}"] = infonce_member.vote(v["name"], subject, v.get("seeds", [0]), raw,
+                                                                args.col_norm)
+            sim = sim + v["weight"] * votes[f"infonce_{v['name']}"]
+        if args.dump_scores:
+            dump = resolve(args.dump_scores)
+            dump.mkdir(parents=True, exist_ok=True)
+            np.savez(dump / f"{subject}.npz", **votes)
         ranked = ranked_candidates(sim).astype(np.int64)
         np.save(out / f"{subject}_ranked_candidate_list.npy", ranked)
         truth, note = (d.video_id.astype(int) if d.video_id is not None else None), ""
