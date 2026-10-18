@@ -27,6 +27,8 @@ retrained checkpoint), --extra-tags adds work/prep_variants/A<tag>_XX_s0.npy dum
 (original tst order for 05/06) with --extra-weights, --out-dir keeps candidates apart:
   python -m src.make_submission --data-dir <root> --ed-dir work/ed_member_5e3154e \
       --extra-tags _fc6 _vmae8 _dfc6 _dvmae8 --extra-weights 5 9 9 9 --out-dir work/submission_candidate
+--base-weights replaces 9 9 5 2 1 1 1 1 (variant B of docs section 11 drops E-D:
+  --base-weights 9 9 0 2 1 1 1 1 --extra-tags _fc6 _vmae8 _dnew --extra-weights 9 5 60 --sinkhorn 3).
 --sinkhorn TAU re-ranks the fused mean ranks with Sinkhorn normalisation (src/sinkhorn.py; use
 tau = 3); without it the output is unchanged.
 """
@@ -136,6 +138,8 @@ def main():
     ap.add_argument("--data-dir", required=True)
     ap.add_argument("--subjects", nargs="+", default=["05", "06"])
     ap.add_argument("--ed-dir", default="work/ed_member", help="E-D rankings, original order")
+    ap.add_argument("--base-weights", nargs=8, type=float, default=WEIGHTS,
+                    help="weights of members 1-8 (clip, alexnet, E-D, ridge, 4 transfers); 0 drops one")
     ap.add_argument("--extra-tags", nargs="*", default=[], help="extra members A<tag>_XX_s0.npy")
     ap.add_argument("--extra-weights", nargs="*", type=float, default=[])
     ap.add_argument("--out-dir", default="submissions")
@@ -145,7 +149,7 @@ def main():
     root = Path(args.data_dir)
     if len(args.extra_tags) != len(args.extra_weights):
         raise SystemExit("--extra-tags and --extra-weights must have the same length")
-    weights = WEIGHTS + list(args.extra_weights)
+    weights = list(args.base_weights) + list(args.extra_weights)
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

@@ -397,3 +397,51 @@ The 33.3% top-1 appears at tau 3 only, so it is a lucky peak, not a robust gain 
 also picked by looking at all four dev subjects). What holds at every tau is the top-5 and
 mean-rank gain. Chosen new-member weights at tau 3: 9:9:9:9 in all folds, vs 5:9:9:9; the
 difference is one weight, so the submission keeps 5:9:9:9 (already checked end to end).
+
+## 11. Fusion B: Daniel's latest ensemble replaces members 3, 11, 12 (18 Oct)
+
+Daniel's submission of commit 9d62e5b (branch `feature/clip-lowlevel-forward-model`) is a
+cross-subject ensemble: 9 CLIP encoders + 2 ridges (weight 0.75), plus ridge votes into
+AlexNet conv3 (1.0), VideoMAE layer 8 (1.0) and CLAP audio (0.3), each column-normalised.
+It overlaps with our member 3 (his older CLIP encoder) and member 12 (VideoMAE-l8 ridges).
+Our fusion and his submission are statistically tied on dev (top-1 +66/-52, p = 0.23) but
+pick the same top video for only 33% of the recordings, so they partly complement each
+other. Four structures compared, all with Sinkhorn, weights and tau chosen inside each fold:
+
+```bash
+# Daniel's rankings for sub-01..06 at his commit (his code, his weights; reproduces his
+# committed sub-05/06 files exactly)
+git worktree add --detach ../dan-9d62e5b 9d62e5b
+#   (in ../dan-9d62e5b: data/eeg-mind-reading-challenge -> challenge root, as in section 4)
+(cd ../dan-9d62e5b && python -m src.xsubj.submit --out work/dan_submit)
+python -m src.xsubj_member --src ../dan-9d62e5b/work/dan_submit --tag _dnew --data-dir $D
+python -m src.loo_fusion_variants
+python -m src.make_submission --data-dir $D --ed-dir work/ed_member_5e3154e \
+    --base-weights 9 9 0 2 1 1 1 1 --extra-tags _fc6 _vmae8 _dnew --extra-weights 9 5 60 \
+    --sinkhorn 3 --out-dir submissions
+```
+
+| Fusion (LOO held-out, sub-01..04) | members | top-1 | top-5 | mean rank |
+|---|---|---|---|---|
+| A current (1-7, 9-12) | 11 | 32.11 | 66.18 | 6.41 |
+| **B: 3, 11, 12 replaced by Daniel's ensemble** | **9** | **35.54** | 68.38 | 5.76 |
+| C: only 3 replaced | 11 | 35.54 | 70.83 | 5.65 |
+| D: A and Daniel blended (his share searched) | 12 | 34.07 | 69.36 | 5.67 |
+| Daniel alone | 1 | 28.68 | 65.93 | 7.20 |
+
+(A is 32.11 here instead of 29.41 in section 8 because the weights are now chosen with
+Sinkhorn on, the same protocol for all four rows.) B vs A: top-1 +42/-28 (p = 0.12), top-5
+p = 0.30, rank p = 0.008. B vs Daniel: top-1 +66/-38 (p = 0.008), rank p = 2e-8. C vs A:
+top-5 p = 0.014, rank p = 0.0002.
+
+**B is the submission candidate:** same top-1 as C with 9 instead of 11 members and no
+pipeline counted twice; its weights are the most stable (Daniel 60 in all four folds, tau 3
+in three). Final weights, chosen on all four dev subjects: clip 9, alexnet-f3 9, ridge 2,
+transfers 1 each, fc6 9, VideoMAE-l8 5, Daniel 60, Sinkhorn tau 3 (sub-05/06 get the fourth
+transfer at 1). Daniel's ensemble carries about 60% of the weight. `make_submission
+--base-weights` (new; default unchanged, checked bit-identical) sets member 3 to 0.
+
+Caveats: Daniel's weights were fitted on these four dev subjects, so every variant
+containing his ensemble is optimistic on dev.
+The reliable gain over A is the mean rank; top-1 differences are within noise.
+Reproducing B needs his commit 9d62e5b (code and weights are on his branch).
