@@ -209,3 +209,27 @@ weights, not the choice of members); section 5 checks that choice without test d
 The original members' weights (9:9:5:2) were chosen on all four dev subjects. For sub-05/06: `make_submission.py` + the two new members (dumps
 `work/prep_variants/A_fc6_XX_s0.npy`, `A_vmae8_XX_s0.npy`, original tst order) and the
 E-D dumps from checkpoint 5e3154e.
+
+## 6. Daniel's audio member (CLAP ridge): no gain (18 Oct)
+
+Daniel's branch (commit 22c9541) adds an audio vote: a ridge from the EEG to the CLAP
+embedding of each video's sound track (`src.xsubj.audio_member`; solo on dev 4.9 / 21.1,
+mean rank 25.7). Tested as a 12th member of the candidate fusion (section 4), same LOO
+protocol; its weight searched over 0, 1, 2, 3, 5, 9 together with the other new members:
+
+```bash
+for s in 01 02 03 04; do git show origin/feature/clip-lowlevel-forward-model:models/xsubj/members/clap_ridge/dev_sorted/clap_${s}_ridge_s0.npy \
+    > work/prep_variants/A_dclap_${s}_s0.npy; done
+python -m src.loo_clap_member
+```
+
+| Fusion (LOO held-out mean, sub-01..04) | top-1 | top-5 | mean rank |
+|---|---|---|---|
+| candidate (section 4) | 29.41 | 63.24 | 7.87 |
+| + Daniel's CLAP member | 30.15 | 62.50 | 7.60 |
+
+Chosen CLAP weight 5 in all four folds. Paired on 408 recordings: top-1 +30 / -27 (exact
+McNemar p = 0.79), top-5 +18 / -21 (p = 0.75), rank better in 138, worse in 123 (Wilcoxon
+p = 0.55). Not significant on any measure, so the candidate stays without it. The sound
+information is not lost: in the RSA, loudness over time is as brain-like as the best
+visual features, but the visual members' EEG decoders seem to pick up most of it already.
