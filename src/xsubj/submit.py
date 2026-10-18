@@ -34,6 +34,7 @@ import argparse
 import joblib
 import numpy as np
 
+from src.xsubj import infonce_member
 from src.xsubj.eeg.dataset import Trials
 from src.xsubj.eeg.preprocess import load_preprocessed
 from src.xsubj.metrics import cosine_term, similarity, sinkhorn
@@ -163,6 +164,11 @@ def main():
             sim = w_image * term(pred, cand_emb)
         for _, w, pooled, own, cand in extra:
             sim = sim + w * term(a * pooled.predict(d.X) + own[subject].predict(d.X), cand)
+        for v in (cfg["submit"].get("infonce_votes", []) if args.model == "ensemble" else []):
+            # per-subject InfoNCE EEGNets (src.xsubj.infonce_member) on the raw test EEG, seeds averaged
+            raw = infonce_member.load_test(resolve(cfg["data"]["challenge_dir"]), subject)
+            sim = sim + v["weight"] * infonce_member.vote(v["name"], subject, v.get("seeds", [0]), raw,
+                                                          col_norm=not cosine and args.col_norm)
         if tau:
             sim = sinkhorn(sim, tau)
         ranked = ranked_candidates(sim).astype(np.int64)
