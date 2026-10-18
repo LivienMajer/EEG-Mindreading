@@ -35,6 +35,7 @@ from .challenge_data import TEST_VIDEO_IDS, load_test_subject, load_train_subjec
 from .contrastive_pipeline import (build_target_space, eeg_window,
                                    rank_candidates, train_infonce)
 from .log_score import log_score
+from .score_dump import save_scores
 
 # dev subject ids (DEV_SUBJECTS is local to contrastive_pipeline; redefined
 # here to avoid odd import games)
@@ -104,12 +105,13 @@ def main():
                    f"work/xsubj_probe/model_sub{tr}_{emb_tag}_s{args.seed}.pt")
 
         for ts in args.test_subs:
-            ranked = rank_candidates(model, E_tst[ts], X_cand)
+            ranked, S = rank_candidates(model, E_tst[ts], X_cand, return_scores=True)
             if y_tst[ts] is None:
                 print(f"  model sub-{tr} -> tst sub-{ts} [no labels]: "
                       f"ranking dumped only")
                 np.save(f"work/xsubj_probe/ranked_tr{tr}_te{ts}_{emb_tag}_s{args.seed}.npy",
                         ranked)   # original row order, ready for submission
+                save_scores(f"work/xsubj_probe/ranked_tr{tr}_te{ts}_{emb_tag}_s{args.seed}.npy", S)
                 continue
             order = np.argsort(y_tst[ts])
             ranked_e = ranked[order]
@@ -123,6 +125,7 @@ def main():
                       top1=t1, top5=t5, note=tag)
             np.save(f"work/xsubj_probe/ranked_tr{tr}_te{ts}_{emb_tag}_s{args.seed}.npy",
                     ranked_e)
+            save_scores(f"work/xsubj_probe/ranked_tr{tr}_te{ts}_{emb_tag}_s{args.seed}.npy", S[order])
 
 
 if __name__ == "__main__":

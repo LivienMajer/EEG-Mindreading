@@ -27,6 +27,7 @@ import numpy as np
 
 from .challenge_data import TEST_VIDEO_IDS, load_test_subject
 from .log_score import log_score
+from .score_dump import save_scores
 
 
 def main():
@@ -81,9 +82,11 @@ def main():
         sim = similarity(pred, cand, col_norm=False)
         ranked = TEST_VIDEO_IDS[np.argsort(-sim, axis=1, kind="stable")].astype(np.int64)
         np.save(out / f"ranked_sub{sub}.npy", ranked)
+        save_scores(out / f"ranked_sub{sub}.npy", sim)
 
         if tst.y is not None and args.dev_sorted_dir:
             np.save(Path(args.dev_sorted_dir) / f"ed_{sub}_xsubj_s0.npy", ranked[np.argsort(tst.y)])
+            save_scores(Path(args.dev_sorted_dir) / f"ed_{sub}_xsubj_s0.npy", sim[np.argsort(tst.y)])
         if tst.y is not None:
             t1 = float((ranked[:, 0] == tst.y).mean())
             t5 = float((ranked[:, :5] == tst.y[:, None]).any(1).mean())

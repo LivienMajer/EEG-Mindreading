@@ -292,3 +292,65 @@ Added to the candidate fusion (LOO as in section 6, extra weight searched over 0
 
 No extra member helps; together with CLAP (section 6) and V-JEPA 2 (RSA), the fusion
 seems saturated: new targets reach the same EEG information the members already use.
+
+## 8. Sinkhorn re-ranking: each video appears once per test set (18 Oct)
+
+Branch `experiment/sinkhorn-fusion`. Every subject's tst split has 102 recordings of the
+102 candidates, one each (dev: the label-sorted truth is 1001..1102 for every subject;
+sub-05/06: 102 recordings too). The fusion ranked every recording on its own, so one
+"attractive" video could top many recordings. `src/sinkhorn.py` turns the fused mean ranks
+into P = exp(-mean rank / tau) and normalises rows and columns in turn until every
+recording and every video sums to 1 (Sinkhorn 1964; Cuturi 2013), then ranks each
+recording by its row of P. Label-free; it uses only the shape of the test set (as the
+per-candidate normalisation in `src/xsubj/submit.py`). Plug-in: `make_submission
+--sinkhorn 3`; without the option the output is bit-identical to before.
+
+```bash
+python -m src.loo_sinkhorn          # nested: weights, then tau, chosen on 3 dev subjects
+python -m src.make_submission --data-dir $D --ed-dir work/ed_member_5e3154e \
+    --extra-tags _fc6 _vmae8 _dfc6 _dvmae8 --extra-weights 5 9 9 9 --sinkhorn 3 --out-dir work/submission_sinkhorn
+python -m src.validate_submission work/submission_sinkhorn/sub-05_ranked_candidate_list.npy $D 05
+```
+
+| Candidate fusion (LOO held-out, sub-01..04) | top-1 | top-5 | mean rank |
+|---|---|---|---|
+| plain (section 4) | 29.41 | 63.24 | 7.87 |
+| **+ Sinkhorn** | 29.41 | **68.38** | **6.61** |
+
+Paired on 408 recordings: top-1 +41 / -41 (p = 1.0), top-5 +33 / -12 (exact McNemar
+p = 0.0025), rank better in 183, worse in 108 (Wilcoxon p = 4e-9). Chosen tau 5, 2, 2, 8
+in the four folds. On all four dev subjects with the final weights (optimistic, for the
+choice only) tau 2-5 is a plateau (top-1 31.4-32.1, top-5 66.2-68.1, mean rank 6.34-6.41;
+plain 30.4 / 63.0 / 7.65), so the submission uses tau = 3. Simpler variants were worse in
+a first, non-nested check: z-scoring each candidate's column (top-1 25.5) and a hard
+one-to-one assignment (Hungarian, 28.2). Sinkhorn changes the top video for about half of
+the sub-05/06 recordings (47% / 52% unchanged).
+
+## 9. Score fusion instead of rank fusion (18 Oct)
+
+Mean-rank fusion keeps only the order of each member's candidates, not how sure the member
+is. Every member script now also saves its similarity table next to its ranking
+(`<ranking>.scores.npy`, `src/score_dump.py`; same rows, columns 1001..1102;
+`src/xsubj/submit.py --save-scores`). Rerunning all members (commands of sections 1, 2, 4,
+with `--save-scores` for `src.xsubj.submit`) reproduced all 78 ranking files bit-identically.
+Each member's table is z-scored per recording ("row") or also per candidate ("row+col"),
+then summed with weights from the same grid; nested LOO as in section 8.
+
+```bash
+python -m src.loo_score_fusion
+```
+
+| Fusion (LOO held-out, sub-01..04) | top-1 | top-5 | mean rank |
+|---|---|---|---|
+| ranks | 29.41 | 63.24 | 7.87 |
+| ranks + Sinkhorn | 29.41 | 68.38 | 6.61 |
+| scores (z row) | 28.92 | 64.22 | 7.48 |
+| scores (z row) + Sinkhorn | 31.62 | 67.65 | 6.21 |
+| scores (z row+col) | 28.43 | 64.22 | 7.27 |
+| scores (z row+col) + Sinkhorn | 30.15 | 66.42 | 6.64 |
+
+Scores alone vs ranks: n.s. (top-1 +20/-22, top-5 +22/-18, rank p = 0.10). Scores +
+Sinkhorn vs ranks + Sinkhorn: top-1 +33/-24 (p = 0.29), top-5 +15/-18 (p = 0.73), rank
+p = 0.12, not significant, and its tau varied more between folds (0.1-0.5). So the gain
+comes from Sinkhorn, not from scores; the submission keeps rank fusion + Sinkhorn
+(fewer moving parts: sub-05/06 need no new score dumps).

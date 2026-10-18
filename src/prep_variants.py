@@ -39,6 +39,7 @@ from scipy import signal, stats
 
 from .challenge_data import TEST_VIDEO_IDS, load_test_subject, load_train_subject, zscore
 from .contrastive_pipeline import T_WIN, build_target_space, rank_candidates, train_infonce
+from .score_dump import save_scores
 
 VARIANTS = {
     "A": dict(lowpass=False, remove_mean=False, align=False),
@@ -127,8 +128,10 @@ def run(args):
                                   embed_dim=256, net_seed=args.seed, batch_size=256,
                                   epochs=args.epochs, lr=3e-4, temperature=0.1,
                                   seed=args.seed, log_every=50)
-            ranked = rank_candidates(model, E_tst, X_cand)[order]
+            ranked, S = rank_candidates(model, E_tst, X_cand, return_scores=True)
+            ranked = ranked[order]
             np.save(OUT / f"{name}{args.tag}_{sub}_s{args.seed}.npy", ranked)
+            save_scores(OUT / f"{name}{args.tag}_{sub}_s{args.seed}.npy", S[order])
             if not labeled:
                 print(f"sub-{sub} variant {name}: no labels, ranking dumped in original "
                       f"order ({time.time() - t0:.0f} s)", flush=True)

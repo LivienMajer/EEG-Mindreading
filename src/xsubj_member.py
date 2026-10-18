@@ -19,6 +19,7 @@ import numpy as np
 
 from .challenge_data import load_test_subject
 from .prep_variants import OUT
+from .score_dump import save_scores, scores_path
 
 
 def main():
@@ -39,6 +40,10 @@ def main():
         else:
             note = "original order (no labels)"
         np.save(OUT / f"A{args.tag}_{s}_s0.npy", ranked.astype(np.int64))
+        src_scores = scores_path(Path(args.src) / f"sub-{s}_ranked_candidate_list.npy")
+        if src_scores.exists():               # written by src.xsubj.submit --save-scores
+            S = np.load(src_scores)
+            save_scores(OUT / f"A{args.tag}_{s}_s0.npy", S[np.argsort(y)] if y is not None else S)
         print(f"sub-{s}: {note} -> {OUT / f'A{args.tag}_{s}_s0.npy'}")
 
 

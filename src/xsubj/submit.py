@@ -64,6 +64,8 @@ def main():
                          "(paired test on sub-01..04: top-1 21 vs 23 recordings, top-5 35 vs 26, "
                          "mean rank 17.7 -> 16.8; default on)")
     ap.add_argument("--out", default="submissions")
+    ap.add_argument("--save-scores", action="store_true",
+                    help="also save the similarity table next to each ranking (src/score_dump.py)")
     args = ap.parse_args()
 
     import torch
@@ -124,6 +126,9 @@ def main():
         pred /= np.linalg.norm(pred, axis=1, keepdims=True)
         ranked = ranked_candidates(pred, cand_emb, args.col_norm).astype(np.int64)
         np.save(out / f"{subject}_ranked_candidate_list.npy", ranked)
+        if args.save_scores:                  # for score fusion (src/score_dump.py); not for submissions/
+            from src.score_dump import save_scores
+            save_scores(out / f"{subject}_ranked_candidate_list.npy", similarity(pred, cand_emb, args.col_norm))
         truth = d.video_id.astype(int) if d.video_id is not None else None
         print(f"{subject}: {check_and_score(ranked, truth)}")
     print(f"written to {out}")

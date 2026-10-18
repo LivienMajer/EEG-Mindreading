@@ -10,7 +10,7 @@ the per-candidate normalisation in src/xsubj/submit.py).
 
 tau sets how strongly the constraint acts (small = close to a hard one-to-one assignment).
 For mean-rank fusion the score is minus the weighted mean rank (0..101), so tau is in rank
-units; LOO picks tau = 2 (docs/megafusion_rebuild.md, section 8).
+units; tau 2-5 all work about equally, 3 is used (docs/megafusion_rebuild.md, section 8).
 """
 
 from __future__ import annotations

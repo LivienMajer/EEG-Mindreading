@@ -33,6 +33,7 @@ from scipy.signal import decimate
 from .bench_embeddings import (KEY_TEMPLATE, HighDimPCA, load_pooled,
                                video_matrix_pooled)
 from .challenge_data import TEST_VIDEO_IDS, load_test_subject, load_train_subject
+from .score_dump import save_scores
 
 # snr-window result: 50-350 ms @100 Hz
 T_WIN = (5, 35)
@@ -146,11 +147,12 @@ def infonce(ze, zv, temperature=0.1):
 
 
 def rank_candidates(model, E_tst_win, X_cand, device="cpu", batch_size=512,
-                    cand_ids=None):
+                    cand_ids=None, return_scores=False):
     """(n, 17, w) test EEG -> (n, n_cand) similarity -> candidate ranking.
 
     Returns ranked candidate video IDs (n, n_cand); rows follow INPUT order.
     cand_ids: 1-D array of candidate video IDs (default: TEST_VIDEO_IDS).
+    return_scores: also return S (src/score_dump.py).
     """
     import torch
     if cand_ids is None:
@@ -166,7 +168,8 @@ def rank_candidates(model, E_tst_win, X_cand, device="cpu", batch_size=512,
         Z = np.concatenate(Z)
     Zc = X_cand / (np.linalg.norm(X_cand, axis=1, keepdims=True) + 1e-8)
     S = Z @ Zc.T                                   # (n, n_cand) cosine sim
-    return cand_ids[np.argsort(-S, axis=1)]
+    ranked = cand_ids[np.argsort(-S, axis=1)]
+    return (ranked, S) if return_scores else ranked
 
 
 # ---------------------------------------------------------------------------
@@ -280,7 +283,7 @@ def main():
 
     tst = load_test_subject(root, args.sub)
     E_tst = eeg_window(tst.X)
-    ranked = rank_candidates(model, E_tst, X_cand)
+    ranked, S = rank_candidates(model, E_tst, X_cand, return_scores=True)
 
     if tst.y is not None:
         order = np.argsort(tst.y)                 # eval order (label-sorted)
@@ -301,6 +304,7 @@ def main():
         np.save(f"work/ranked_sub{args.sub}_infonce.npy", ranked_e)
         np.save(f"work/tst_ranked/infonce_{args.sub}_{emb_tag}_s{args.seed}.npy",
                 ranked_e)
+        save_scores(f"work/tst_ranked/infonce_{args.sub}_{emb_tag}_s{args.seed}.npy", S[order])
         np.save(f"work/tst_ranked/truth_{args.sub}_s0.npy", tst.y[order])
     else:
         print("no labels (sub-05/06): submission file written")
@@ -308,6 +312,7 @@ def main():
         Path("work/tst_ranked").mkdir(parents=True, exist_ok=True)
         np.save(f"work/tst_ranked/infonce_{args.sub}_{emb_tag}_s{args.seed}.npy",
                 ranked)
+        save_scores(f"work/tst_ranked/infonce_{args.sub}_{emb_tag}_s{args.seed}.npy", S)
         np.save(f"work/sub-{args.sub}_ranked_candidate_list.npy", ranked)
 
 
