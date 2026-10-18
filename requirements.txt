@@ -12,14 +12,13 @@ torch>=2.2
 torchvision>=0.17
 
 # Video/image foundation models
-open_clip_torch>=2.24
-decord>=0.6            # fast video frame extraction
-<<<<<<< HEAD
-av>=12.0               # audio decoding from video files
-laion-clap             # audio embeddings
-=======
+open_clip_torch>=2.24         # CLIP ViT-B-32 / openai (src/xsubj/video/clip_features.py)
 opencv-python-headless>=4.8   # frame reading in src/xsubj/video (CLIP + low-level features)
->>>>>>> c654b075e0b5a2515673b97e02dc660c5c590983
+transformers>=4.40            # CLAP laion/clap-htsat-unfused, VideoMAE (feature extraction)
+av>=12.0                      # audio decoding from the video files (CLAP, loudness)
+pillow>=10.0
+# Legacy scripts only (src/video_embeddings.py, src/extract_embeddings.py), not needed for
+# src.xsubj: decord (no Python 3.11 wheels on Windows), laion-clap.
 
 # Visualization
 matplotlib>=3.8

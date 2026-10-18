@@ -61,6 +61,8 @@ Everything needed to reproduce the submission without retraining or re-extractin
 | `models/xsubj/checkpoints/<name>/model.pt` | the 9 encoders listed under `submit.encoders` in the config |
 | `models/xsubj/checkpoints/ridge/ridge.joblib` | pooled ridge (refitted by `submit`, deterministic) |
 | `models/xsubj/checkpoints/ridge_subject/ridge_subject.joblib` | per-subject ridges (refitted by `submit`) |
+| `models/xsubj/features/rsa/*.npz`, `models/xsubj/checkpoints/ridge_*/` | AlexNet conv3 / fc6, VideoMAE l8, loudness features and their ridges |
+| `models/xsubj/checkpoints/infonce_{fc6,vmae8}/sub-XX_s{0,1,2}.pt` | per-subject InfoNCE EEGNets (`submit.infonce_votes`, `src/xsubj/infonce_member.py`) |
 | `submissions/sub-05_…npy`, `sub-06_…npy` | the submitted rankings |
 
 The training command of each encoder is listed in the `submit:` section of `configs/xsubj.yaml`.

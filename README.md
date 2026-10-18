@@ -1,161 +1,126 @@
-# EEG Mind Reading
+# EEG Mind Reading: which video was the person watching?
 
-Decoding which video a participant watched from their EEG activity.
+National AI Hackathon 2026 (SchubKI), challenge *Mind Reading Using Machine Learning and EEG*. For each
+3 s EEG recording (17 channels, 500 Hz), the pipeline ranks the 102 candidate videos from most to least
+likely to have caused it.
 
-**Challenge:** Given an EEG recording (3 s, video-watching) and a set of
-candidate videos, identify the correct video.
+**Result on the development subjects sub-01..04** (102 recordings × 102 candidates each, models trained
+on training splits only, every setting chosen by leave-one-subject-out):
+
+| | top-1 | top-5 | mean rank |
+|---|---|---|---|
+| **Final submission** | **44.9 %** | **76.7 %** | **4.36** |
+| Organisers' baseline (AlexNet forward model, sub-01) | 3.9 % | 11.8 % | – |
+| Chance | 1.0 % | 4.9 % | 51.5 |
 
 ## Approach
 
-We align EEG embeddings with video embeddings (CLIP / video foundation model)
-using contrastive learning, then match by cosine similarity.
+The EEG is mapped into the embedding spaces of frozen, public video and audio models, and each candidate
+is scored by cosine similarity. Seven votes are summed and re-ranked jointly:
 
 ```
-videos ──► CLIP/foundation encoder ──► video embedding ─┐
-                                                         ├─► cosine sim ──► pick best
-EEG ────► EEG encoder ──► EEG embedding ─────────────────┘
+                   frozen public models                 EEG decoders (trained here)
+video ─► CLIP ViT-B/32 ─────────► 9 cross-subject encoders + pooled & per-subject ridge ─┐ 0.75
+video ─► AlexNet conv3 ─────────► pooled & per-subject ridge ─────────────────────────────┤ 1.0
+video ─► VideoMAE layer 8 ──────► pooled & per-subject ridge ─────────────────────────────┤ 1.0
+sound ─► CLAP ──────────────────► pooled & per-subject ridge ─────────────────────────────┤ 0.3   cosine terms
+sound ─► loudness envelope ─────► pooled & per-subject ridge ─────────────────────────────┤ 0.5 ─► weighted sum ─► Sinkhorn ─► ranking
+video ─► AlexNet fc6 ───────────► per-subject InfoNCE EEGNet, 3 seeds ────────────────────┤ 0.5
+video ─► VideoMAE layer 8 ──────► per-subject InfoNCE EEGNet, 3 seeds ────────────────────┘ 0.25
 ```
 
-## Setup
+Main findings (details in the reports):
+
+- The decodable signal is the **phase-locked onset response, 50–600 ms**. Power and covariance features
+  carry nothing.
+- **Mid-level visual features** (AlexNet conv3–fc7, VideoMAE layer 8) are better targets than CLIP. A
+  single ridge into them beats the whole CLIP ensemble.
+- **The sound is decoded too.** Loudness and CLAP add independent information.
+- **Per-subject models matter**: a ridge on one subject's ~950 trials beats a pooled ridge on 5,650.
+- **Less preprocessing is better**: only a 40 Hz low-pass, label-free per-split normalisation and
+  Euclidean alignment help.
+- **Sinkhorn re-ranking** uses that every candidate occurs once per test split (+16 points top-1). It is
+  label-free, but a property of this benchmark.
+
+## Reports
+
+- [docs/report_eeg_encoding.md](docs/report_eeg_encoding.md): EEG features, encoders, preprocessing,
+  video and audio targets, second-round scoring, final configuration, limitations.
+- [docs/report_infonce_votes.md](docs/report_infonce_votes.md): per-subject InfoNCE votes, ablation of
+  the final pipeline, variants that did not help, how to choose weights, per-subject signal quality.
+- [src/xsubj/README.md](src/xsubj/README.md): module map and all commands.
+
+## Setup (Python 3.11)
 
 ```bash
 python -m venv .venv
-.venv\Scripts\activate        # Windows
-pip install -r requirements.txt
+.venv/Scripts/python -m pip install -r requirements.txt      # Linux/macOS: .venv/bin/python
 ```
 
-## Pipeline
+The code runs on CPU and uses CUDA if available. Put the organisers' download here (`data/` is gitignored):
 
-| Step | Script |
-|---|---|
-| Load / explore data | `src/challenge_data.py` (validated loader for the challenge format) |
-| EEG preprocessing | `src/preprocess.py`, diagnostics via `src/snr_probe.py` |
-| Organizer baseline (repro) | `src/baseline_organizer.py` (`--sub 01..04` eval, `--sub 05/06` submission) |
-| Video embeddings (GPU) | `src/extract_embeddings.py` — model-agnostic, per-frame npz |
-| Embedding benchmark | `src/bench_embeddings.py` — scores ANY embedding npz on dev subjects |
-| EEG encoder + projection | `src/eeg_encoder.py` |
-| Contrastive training | `src/train_contrastive.py` |
-| Candidate-set evaluation | `src/eval_matching.py` |
+```
+data/eeg-mind-reading-challenge/
+├── trn/sub-XX_trn.npz            training EEG, {video id: 17 x 1500}
+├── tst/sub-XX_tst.npy            test EEG, 102 x 17 x 1500
+├── tst_stim/sub-XX_tst_stim.npy  test labels, sub-01..04 only
+└── stimuli_train/  stimuli_test/ videos (only needed to re-extract features)
+```
 
-## Video-side strategy: which foundation model? (measured, not guessed)
-
-Frame extraction is trivial (0.08 s/video, all 1102 videos in ~90 s even on
-CPU). Encoding is the GPU part: CLIP ViT-B/32 ≈ 2.9 s/video on CPU ≈ 52 min
-for all 1102 — a few minutes on GPU. Therefore: **sweep multiple models**
-(pre-hackathon public releases only), each becomes one candidate "brain
-space", then let the benchmark decide:
-
-| Priority | Model | Why |
-|---|---|---|
-| 1 | `clip-vitb32`, `clip-vitl14` | strong image-space baselines, fast |
-| 2 | `dinov2-b14` | self-supervised features, often best for early visual areas |
-| 3 | `siglip2-b16` | newer, stronger contrastive image model |
-| 4 | `alexnet-f3/6/8/10` | organizer baseline layers + depth comparison for analysis |
-| 5 | `clap`, `clip-clap` | audio-only baseline and equal-weight multimodal fusion |
-
-CLIP and CLAP are extracted as separate embedding files. Their latent spaces
-are not directly comparable, so benchmark them independently before choosing
-an EEG-side fusion strategy. CLAP uses each video's complete 3-second audio
-track to create one normalized embedding per video. CLAP repeat-pads the short
-audio internally to its expected 10-second input length. The first run
-downloads the pretrained CLAP checkpoint. PyAV replaces invalid UTF-8 in MP4
-metadata while reading so malformed tags do not interrupt audio extraction;
-audio decode errors are still surfaced.
-
-To create a fused representation, select `clip-clap`. It first averages the
-sampled CLIP frame vectors into one visual vector per video, then L2-normalizes
-that vector and the video's CLAP vector independently. The vectors are scaled
-by `1/sqrt(2)` and concatenated, giving each modality equal contribution to
-cosine similarity. The default ViT-B/32 + CLAP models produce one
-1024-dimensional fused vector per video. If a video has no audio stream, the
-extractor reports its ID and saves a normalized CLIP vector with a zero-filled
-audio block, so visual matching can still include that candidate. In a
-CLAP-only archive, the missing-audio entry is a zero vector and its ID is
-reported; interpret CLAP-only scores with that limitation in mind.
-
-**GPU teammate workflow:**
+## Reproduce the submission
 
 ```bash
-# 1) extract embeddings for train + test stimuli (one command, GPU)
-python -m src.extract_embeddings --models clip-vitb32 clip-vitl14 dinov2-b14 clap clip-clap \
-    --stimuli-dir <root>/stimuli_train --out work/emb_train.npz --device cuda
-python -m src.extract_embeddings --models clip-vitb32 clip-vitl14 dinov2-b14 clap clip-clap \
-    --stimuli-dir <root>/stimuli_test --out work/emb_test.npz --device cuda
-
-# 2) benchmark each model on dev subjects (any machine)
-python -m src.bench_embeddings --data-dir <root> \
-    --emb-train work/emb_train__clip-vitb32.npz \
-    --emb-test  work/emb_test__clip-vitb32.npz \
-    --window snr   # 50-350 ms; use --window org for 50-600 ms comparison
-
-# Run the same benchmark with the audio-only CLAP embeddings:
-python -m src.bench_embeddings --data-dir <root> \
-    --emb-train work/emb_train__clap.npz \
-    --emb-test  work/emb_test__clap.npz \
-    --window snr
-
-# Benchmark the equal-weight audio+visual fused embeddings:
-python -m src.bench_embeddings --data-dir <root> \
-    --emb-train work/emb_train__clip-clap.npz \
-    --emb-test  work/emb_test__clip-clap.npz \
-    --window snr
+python -m src.xsubj.submit
 ```
 
-For contrastive EEG-to-video alignment, pass the fused training archive to
-`src.train_contrastive`; it reads the per-video fused vectors and infers the
-EEG encoder's output size:
+This writes `submissions/sub-05_ranked_candidate_list.npy` and `sub-06_…` (int, 102 × 102; row *i* =
+*i*-th recording of `tst/sub-XX_tst.npy` in its original order, video IDs 1001–1102 from most to least
+likely) and scores sub-01..04 as a check. All model weights and video features are versioned, so no
+training or feature extraction is needed. The first run preprocesses the EEG once (cache under
+`models/xsubj/cache/`).
+
+Tested from a fresh clone with a fresh Python 3.11.15 environment from `requirements.txt` (CPU, about 5 min):
+the dev scores and sub-05 match exactly; sub-06 differs only by two swaps of neighbouring candidates at
+ranks 82–85 (floating-point near-ties), with identical top-1 and top-5 in every row.
+
+Retraining (optional): the commands for the 9 CLIP encoders are listed under `submit:` in
+[configs/xsubj.yaml](configs/xsubj.yaml). The InfoNCE votes are retrained with:
 
 ```bash
-python -m src.train_contrastive --data <train-data> \
-    --video-embeddings work/emb_train__clip-clap.npz
+python -m src.xsubj.infonce_member --target fc6   --emb models/xsubj/features/rsa/alexnet_fc6.npz --seeds 0 1 2
+python -m src.xsubj.infonce_member --target vmae8 --emb models/xsubj/features/rsa/videomae_l8.npz --seeds 0 1 2
 ```
 
-Log every result in the findings table below — the model ranking is the
-core scientific result for the presentation (which representation best
-matches human visual EEG at which layer depth).
+## Pre-trained models used (public, released before the hackathon)
 
-## Contrastive alignment: recommended phasing
+Only frozen features of these models are used. Their weights are not part of this repository.
 
-1. **Ridge-first (today, safe):** the organizer's forward model IS an
-   alignment method and works with ~900 trials/subject. Benchmark the
-   embedding spaces with it (above), keep the best.
-2. **Cross-subject + ensembling (next):** per-subject best-embedding
-   ensemble + z-scored correlation averaging across models/subjects.
-3. **Contrastive EEG encoder (GPU, upside):** InfoNCE aligning raw windowed
-   EEG segments (50–350 ms) to frozen best video embeddings. With ~900
-   trials/subject data is limited — train across all 6 subjects with
-   subject embeddings as condition, evaluate vs. ridge with the same
-   candidate-matching protocol. Only adopt if it beats ridge on dev.
+| Use | Model | Exact identifier | Library |
+|---|---|---|---|
+| Image embedding (CLIP target) | CLIP ViT-B/32 | `ViT-B-32`, pretrained `openai` | open_clip_torch 3.3.0 |
+| Mid-level image features (conv3, fc6 targets) | AlexNet | `torchvision.models.alexnet`, weights `IMAGENET1K_V1` | torchvision |
+| Video features (layer 8 target) | VideoMAE base, Kinetics fine-tuned | `MCG-NJU/videomae-base-finetuned-kinetics` | transformers |
+| Audio embedding (CLAP target) | CLAP HTSAT | `laion/clap-htsat-unfused` | transformers |
+| Loudness envelope | none (log RMS of the sound track, 100 ms bins) | – | – |
 
-## Team roles
+Feature extraction: `src/xsubj/video/clip_features.py` (CLIP), `src/xsubj/video/foundation_features.py`
+(CLAP), `eeg_pipeline/rsa_features.py` (AlexNet layers, VideoMAE layers, loudness; additionally needs
+`decord`). The extracted features are versioned under `models/xsubj/features/`.
 
-| Person | Owns |
+## What is versioned
+
+| Path | Content |
 |---|---|
-| 1 | preprocessing + baselines (`src/preprocess.py`) |
-| 2 | video embeddings + alignment framework (**GPU: runs the embedding sweep**) |
-| 3 | EEG encoder + training loop (**GPU: contrastive training, phase 3**) |
-| 4 | eval harness, CV, plots, repo hygiene |
+| `models/xsubj/features/` | CLIP, CLAP, AlexNet conv3 / fc6, VideoMAE l8 and loudness features of all 1,102 videos |
+| `models/xsubj/checkpoints/{all,shallow_s*,mlp_s*,eegnet_s0}/` | the 9 cross-subject CLIP encoders |
+| `models/xsubj/checkpoints/ridge*/` | all ridge models (refitted deterministically by `submit`) |
+| `models/xsubj/checkpoints/infonce_{fc6,vmae8}/` | per-subject InfoNCE EEGNets, 6 subjects × 3 seeds each |
+| `submissions/` | the submitted rankings for sub-05 and sub-06 |
 
-Machines with GPUs take the heavy jobs (embedding extraction, contrastive
-training); CPU machines run benchmarks, analyses and plots — the npz format
-makes every result shareable via git-lfs/pull requests to `work/`.
+## Rules followed
 
-## Data layout (expected)
-
-```
-data/
-├── train/          # 4 subjects
-└── test/           # 2 held-out subjects
-```
-
-Adapt `src/load_data.py` once organizers' template scripts arrive.
-
-## Findings log
-
-| Date | Finding |
-|---|---|
-| 2026-10-17 | Organizer baseline (AlexNet features.3 + Ridge forward model): top-1 ~4% on dev test (4x chance, their numbers). Train-fit: 78%. |
-| 2026-10-17 | EEG is pre-normalized (std≈0.5/ch, kurtosis≈3, no outlier trials, p99 ptp<3.1σ). No artifact rejection needed. |
-| 2026-10-17 | PSD: strong 30–50 Hz power = stimulus-locked gamma, NOT line noise. Bandpass/notch/avg-ref/Laplacian all REDUCE cross-subject video identifiability (d'). Raw wins. |
-| 2026-10-17 | Window tuning: 50–350 ms optimal (d'=0.129 vs 0.104 for organizer's 50–600 ms), consistent across all 9 subject pairs (3 repeats, incl. 04/05/06). |
-|---|---|
+- Training uses the training splits of all six subjects only. No test recording is used for training.
+- The labelled test splits of sub-01..04 are used only for validation and model selection, never as
+  templates for sub-05/06.
+- Normalisation of the test recordings (per-split mean removal, scaling, Euclidean alignment) and the
+  Sinkhorn re-ranking are unsupervised.
