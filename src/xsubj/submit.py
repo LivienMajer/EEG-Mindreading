@@ -13,13 +13,16 @@ Ranking: S = image_weight * S_image + sum_k weight_k * S_k, then (optionally) Si
   terms:   `submit.scoring.terms`: cosine (one global z-score per term) or colnorm (per-candidate z-score)
   Sinkhorn `submit.scoring.sinkhorn_tau`: rows and columns of exp(S / tau) normalised in turn, as every
            candidate occurs exactly once per test split
+  InfoNCE  `submit.infonce_votes`: per-subject InfoNCE EEGNets (src.xsubj.infonce_member), seeds averaged
 Default (configs/xsubj.yaml): image_weight 0.75; AlexNet conv3 1.0, VideoMAE layer 8 1.0, CLAP 0.3,
-loudness 0.5; pooled_weight 0.25; ridge alpha_scale 0.2; cosine terms, tau 0.3. All chosen on sub-01..04
-(leave-one-subject-out), see docs/report_eeg_encoding.md section 8.
-                                   dev sub-01..04   (top-1 / top-5 / rank)
-  default                          40.9% / 74.8% /  4.9
-  previous (colnorm, no Sinkhorn, alpha x 1, no loudness)
-                                   28.7% / 65.9% /  7.2
+loudness 0.5; pooled_weight 0.25; ridge alpha_scale 0.2; InfoNCE AlexNet fc6 0.5, VideoMAE l8 0.25;
+cosine terms, tau 0.3. All chosen on sub-01..04 (leave-one-subject-out), see docs/report_eeg_encoding.md
+section 8 and docs/report_infonce_votes.md.
+                                   dev sub-01..04   (top-1 / top-5 / mean rank)
+  default                          44.9% / 76.7% / 4.36
+  without the InfoNCE votes        40.9% / 74.8% / 4.85
+  first round (colnorm, no Sinkhorn, alpha x 1, no loudness, no InfoNCE)
+                                   28.7% / 65.9% / 7.20
 
     python -m src.xsubj.submit                             # ensemble, sub-01..06
     python -m src.xsubj.submit --model ridge               # pooled ridge only (fits on all trn splits)

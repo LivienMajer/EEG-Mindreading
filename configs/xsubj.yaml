@@ -99,8 +99,10 @@ submit:                        # default submission: 3 equal votes = mean of the
   #   (before, with 0.5-40 Hz band-pass + average reference: 13.2% / 43.1% / 14.2;
   #    paired: rank better in 214 vs 141 recordings, p = 0.0001; top-1 47 vs 29 hits, p = 0.05)
   encoders: [all, shallow_s1, shallow_s2, shallow_s3, shallow_s4, mlp_s0, mlp_s1, mlp_s2, eegnet_s0]
-  # 4th vote: CLAP audio ridge (pooled + per-subject), added as S_image + audio_weight * S_audio.
-  # All settings chosen on the dev subjects sub-01..04 only (leave-one-subject-out, report section 8);
+  # Extra votes: pooled + per-subject ridges into other target spaces (CLAP audio, AlexNet conv3,
+  # VideoMAE l8, loudness), added as weight * S_k. All settings chosen on the dev subjects sub-01..04
+  # only (leave-one-subject-out, report section 8): dev 40.9% / 74.8% / 4.85 (strict LOO 40.2% / 74.3%);
+  # before the second round 28.7% / 65.9% / 7.2. With infonce_votes (below): 44.9% / 76.7% / 4.36.
   image_weight: 0.75           # weight of the CLIP image ensemble (9 encoders + 2 ridges); 0 = not used
   pooled_weight: 0.25          # pooled ridge x 0.25 next to the per-subject ridge (LOO: 0.05-0.25 plateau)
   scoring:                     # cosine terms (one global z-score each), then Sinkhorn over the test split

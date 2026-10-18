@@ -12,7 +12,8 @@ EEG ──► preprocessing ──► EEG encoder (trained, this section) ─►
 
 | | Dev: sub-01 to sub-04 |
 |---|---|
-| **Submission (section 9): CLIP ensemble + AlexNet conv3 + VideoMAE l8 + CLAP + loudness; cosine terms + Sinkhorn; ridge alpha × 0.2; pooled ridge × 0.25** | **40.9 % / 74.8 % / 4.85** (strict LOO: 40.2 / 74.3 / 4.86) |
+| **Final submission: section 9 + per-subject InfoNCE votes ([report_infonce_votes.md](report_infonce_votes.md))** | **44.9 % / 76.7 % / 4.36** (strict LOO: same) |
+| Section 9: CLIP ensemble + AlexNet conv3 + VideoMAE l8 + CLAP + loudness; cosine terms + Sinkhorn; ridge alpha × 0.2; pooled ridge × 0.25 | 40.9 % / 74.8 % / 4.85 (strict LOO: 40.2 / 74.3 / 4.86) |
 | Previous submission: CLIP ensemble 0.75 + conv3 1 + VideoMAE l8 1 + audio 0.3, per-candidate z-scores | 28.7 % / 65.9 % / 7.2 |
 | CLIP image ensemble (9 encoders + 2 ridges) + audio | 19.9 % / 48.8 % / 10.8 |
 | CLIP image ensemble only | 17.6 % / 47.8 % / 11.5 |
@@ -171,6 +172,7 @@ Late frames are significantly worse than early ones, consistent with an onset re
 
 **Audio.** The videos were shown with sound. A ridge from EEG to the CLAP embedding of each sound track (`transformers` `laion/clap-htsat-unfused`, `src/xsubj/video/foundation_features.py`, `src/xsubj/audio_member.py`) decodes the video from audio alone at 4.9 % / 21.1 % / 25.7, five times chance. Concatenating CLAP to the CLIP target does not help (CLIP + CLAP: 15.0 % / 42.2 % / 14.6): the weaker audio signal dilutes the image signal. As a **separate vote**, `S = S_image + w · S_audio` (both per-candidate normalised), it does help. Cross-validation over training videos picks w = 0.5. The electrodes mostly cover visual cortex, which fits a real but weak audio signal.
 
+Every vote and combination of the earlier submission, trained on trn data only:
 
 | Votes | Dev top-1 / top-5 / rank |
 |---|---|
@@ -183,6 +185,7 @@ Late frames are significantly worse than early ones, consistent with an onset re
 | **E + P + S + audio, w = 0.3 (earlier submission)** | **19.9 % / 48.8 % / 10.8** |
 | Audio only | 4.9 % / 21.1 % / 25.7 |
 
+w = 0.3 is the best of the grid on dev (0.1–1.0), while cross-validation over training videos alone gives 0.5.
 
 ## 7. Mid-level video features as targets
 
@@ -197,11 +200,11 @@ Following the team's RSA finding (brain-likeness of an embedding predicts how we
 | AlexNet fc6 | 19.4 % / 52.2 % / 10.7 |
 | AlexNet fc7 | 13.7 % / 51.5 % / 10.3 |
 
-A single ridge into AlexNet conv5 or fc6 space matches the whole CLIP ensemble on the dev subjects. Mid-level visual features are a much better target for these EEG recordings than a semantic image–text embedding, and they transfer better to new subjects.
+A single ridge into AlexNet conv5 or fc6 space matches the whole CLIP ensemble of nine encoders and two ridges on the dev subjects. Mid-level visual features are a much better target for these EEG recordings than a semantic image–text embedding.
 
 **Combination and weights.** The layers were combined with the CLIP image ensemble and the audio vote. The weights (CLIP ensemble 0–1, audio 0.3–0.75, conv3 and VideoMAE l8 1–3 each, 135 combinations) were chosen on the dev subjects only, by the mean of top-1 and top-5.
 
-
+Caveat: VideoMAE layer 8 was the team's a-priori choice from the RSA, while AlexNet conv3 was picked during early exploration (see the note at the top); neighbouring layers (conv4, conv5, fc6) perform similarly on the dev subjects.
 
 ## 8. Second round: scoring, regularisation, loudness (18 Oct)
 
@@ -225,13 +228,13 @@ Fourteen candidate improvements were tested one at a time on the configuration o
 | B7 linear map trained with a retrieval loss (InfoNCE, close to RCSLS) | alone 10–14 % top-1; as vote 36.8 / 72.3 | top-1 −1.7 (p = 0.02) | no |
 | B8 weights per subject from cross-validation on its own training data | 37.3 / 69.6 / 5.51 (test, no LOO needed) | top-5 −2.9 (p = 0.05) | no |
 
-Not tested: fusion with the team's megafusion (needs its ranking files), V-JEPA 2 features (too slow on a CPU), and additional data from the original BOLD Moments dataset, its fMRI responses or a joint assignment across sub-05/06 (questions for the organisers).
+Not tested here: fusion with the team's megafusion (needs its ranking files; the per-subject InfoNCE members are added in [report_infonce_votes.md](report_infonce_votes.md)), V-JEPA 2 features (too slow on a CPU), and additional data from the original BOLD Moments dataset, its fMRI responses or a joint assignment across sub-05/06 (questions for the organisers).
 
 **What the adopted changes do:**
 - **Sinkhorn (A1).** Every test split contains each candidate exactly once. The summed scores are turned into P ∝ exp(score / τ), and rows and columns are normalised in turn until every recording and every candidate sums to 1 (Sinkhorn 1964; Cuturi 2013). Each recording is then ranked by its row of P, so one "attractive" video can no longer top many recordings. This is label-free and uses only the shape of the test set, like the earlier per-candidate z-score, but consistently over rows and columns. It works only with cosine terms that keep each candidate's own spread (one global z-score per term); per-candidate z-scoring followed by Sinkhorn is weaker. CSLS adds nothing on top, because Sinkhorn absorbs any per-candidate offset. Exploiting the structure of the test set is a property of this benchmark, not of the brain, and we state it as such.
 - **Less regularisation (A3).** RidgeCV chooses alpha by leave-one-out on the training trials, which are single presentations. The test recordings are cleaner averages, so less shrinkage is optimal. Every fold picked a factor of 0.1–0.3. The factor applies to every ridge.
 - **Loudness (A4).** The log-RMS loudness of the sound track in 100 ms bins (`low_loudness` of the team's `rsa_features.py`) adds to the CLAP vote. This matches the RSA finding that the early response follows how loud a sound is (auditory N1, ~105–125 ms) more than what kind of sound it is.
-- **Pooled weight (B6).** With weaker regularisation, the per-subject ridge carries more of the signal. Values from 0.05 to 0.25 form a plateau. 0.25 keeps part of the shared information, which helps sub-06 with its smaller training set.
+- **Pooled weight (B6).** With weaker regularisation, the per-subject ridge carries more of the signal. Values from 0.05 to 0.25 form a plateau. 0.25 keeps part of the shared information, which matters most for subjects with smaller training sets (sub-06 has 850 trials).
 
 **Combined, against the previous submission** (paired, same recordings):
 - **Dev subjects:** top-1 28.7 → 40.9 % (72 vs 22 recordings, p < 0.001), top-5 65.9 → 74.8 % (62 vs 26, p < 0.001), mean rank 7.20 → 4.85.
@@ -246,12 +249,14 @@ The submission sums five similarity terms. Each is a cosine similarity with one 
 4. **CLAP audio** ridge vote, weight 0.3
 5. **Loudness envelope** ridge vote, weight 0.5
 
-Every ridge vote is pooled ridge × 0.25 + per-subject ridge. Every ridge uses alpha = RidgeCV's choice × 0.2.
+Every ridge vote is pooled ridge × 0.25 + per-subject ridge. Every ridge uses alpha = RidgeCV's choice × 0.2. The final submission adds two per-subject InfoNCE votes (AlexNet fc6 0.5, VideoMAE l8 0.25, 3 seeds each; [report_infonce_votes.md](report_infonce_votes.md)).
 
 | | sub-01 | sub-02 | sub-03 | sub-04 | Dev mean |
 |---|---|---|---|---|---|
-| Top-1 | 49.0 % | 39.2 % | 33.3 % | 42.2 % | **40.9 %** |
-| Top-5 | 79.4 % | 73.5 % | 66.7 % | 79.4 % | **74.8 %** |
+| Top-1, section 9 | 49.0 % | 39.2 % | 33.3 % | 42.2 % | **40.9 %** |
+| Top-5, section 9 | 79.4 % | 73.5 % | 66.7 % | 79.4 % | **74.8 %** |
+| Top-1, + InfoNCE votes (final) | 52.9 % | 47.1 % | 33.3 % | 46.1 % | **44.9 %** |
+| Top-5, + InfoNCE votes (final) | 79.4 % | 75.5 % | 71.6 % | 80.4 % | **76.7 %** |
 
 The dev numbers use settings chosen on the same four subjects; the strict LOO estimate is 40.2 % / 74.3 %.
 
@@ -273,13 +278,15 @@ python -m eeg_pipeline.rsa_features --stim_dir data/eeg-mind-reading-challenge \
     --out_dir models/xsubj/features/rsa --models alexnet videomae audio
 ```
 
-
 The training commands for each encoder are listed under `submit:` in `configs/xsubj.yaml`.
 
 ## Limitations and failure cases
 
 - **Small development set.** 408 scored recordings give about ±1.3 points of noise on top-1. Several reported differences (normalisation, ensemble size) are trends rather than proven effects; only the paired tests marked significant should be read as such.
+- **Sub-06 has fewer training trials** (850 against 947–972), and the shared stimulus-locked signal in its training data is the weakest of the six subjects ([report_infonce_votes.md](report_infonce_votes.md)).
 - **The re-ranking relies on the test design.** Sinkhorn assumes that every candidate occurs exactly once per subject. That holds for this challenge, but not for open-set retrieval.
+- **Many options were tried.** Each was chosen by LOO, but selecting among 14 options on the same four subjects still favours lucky ones slightly.
+- **Subjects differ a lot.** Top-1 ranges from 33.3 % (sub-03) to 49.0 % (sub-01) in the section 9 model.
 - **Sections 1–4 use the earlier preprocessing.** The feature, encoder and ensemble comparisons were not rerun after the preprocessing change; their absolute numbers are lower than the final ones, and only the relative conclusions carry over.
 - **Training and test recordings differ.** Training trials are single presentations, test recordings appear to be averages. The models are trained on noisier data than they are scored on, and the cross-validated weight between pooled and per-subject ridge is chosen on single trials.
 - **Only the onset response is decoded.** Nothing after about 1.1 s carries information, so any content that only appears later in a 3 s video is invisible to these models.
@@ -291,8 +298,8 @@ The training commands for each encoder are listed under `submit:` in `configs/xs
 2. At this data size, a **linear model beats deep networks**; the networks only help as additional, differently-erring ensemble members.
 3. **Subject-specific models matter more than more data**: per-subject ridge on ~950 trials beats pooled ridge on 5,650, and combining both is best.
 4. **Less preprocessing is better**: a high-pass filter and average referencing remove stimulus information; only a 40 Hz low-pass, label-free per-split normalisation and Euclidean alignment help.
-5. **Mid-level visual features are the right target**: ridge into AlexNet conv3–fc7 or VideoMAE layer 8 beats the CLIP ensemble, especially on new subjects.
-6. **The brain also encodes the sound**, and audio decoding transfers to new subjects better than visual decoding; how loud a sound is matters more than what it is.
+5. **Mid-level visual features are the right target**: ridge into AlexNet conv3–fc7 or VideoMAE layer 8 beats the CLIP ensemble.
+6. **The brain also encodes the sound**; how loud a sound is matters more than what it is.
 7. **Regularise for the test condition, not the training condition**: cross-validation on single trials over-regularises for averaged test recordings; a fifth of its alpha is better.
-8. **Use the structure of the test set, and say so**: re-ranking so that every candidate is used once (Sinkhorn) is label-free, improves the mean rank on both subject groups and adds about 6 points of top-5 on sub-05/06.
+8. **Use the structure of the test set, and say so**: re-ranking so that every candidate is used once (Sinkhorn) is label-free and improves the dev subjects under leave-one-subject-out (top-1 +3.4 points, mean rank p = 0.006).
 9. **Careful statistics are part of the method**: with 102 candidates and 408 recordings, paired tests and cross-validated choices separate real gains from noise.

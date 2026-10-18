@@ -8,6 +8,7 @@ video ──► frozen CLIP ViT-B-32 (open_clip 3.3.0, ViT-B-32 / openai) ──
 EEG ──► preprocessing ──► 3 votes: 9 encoders | pooled ridge | per-subject ridge ─► 512-d ─┘
 ```
 
+Submission (102 candidates): dev sub-01 to sub-04 **top-1 44.9 %, top-5 76.7 %, mean rank 4.36** (chance 1.0 % / 4.9 % / 51.5); 40.9 % / 74.8 % / 4.85 without the per-subject InfoNCE votes. All settings chosen on sub-01..04 only (leave-one-subject-out). The full analysis is in [docs/report_eeg_encoding.md](../../docs/report_eeg_encoding.md) and [docs/report_infonce_votes.md](../../docs/report_infonce_votes.md).
 
 ## Setup (Python 3.11)
 
