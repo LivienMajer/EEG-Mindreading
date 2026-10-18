@@ -169,9 +169,13 @@ options gives bit-identical files to before.
 **Expect less on sub-05/06 than on the dev subjects**, mainly sub-06: fewest training
 trials (850 vs 947-972) and the least typical responses (RSA consistency with the other
 subjects 0.010 / 0.017 at 105 / 225 ms vs 0.019-0.055 for the dev subjects, which
-decode better the more typical they are). For the rules, the encoder weights in
-`models/xsubj/checkpoints/{fc6,vmae8}_*` (git-ignored here) must be committed if this
-submission is used.
+decode better the more typical they are). For the rules ("all model weights required to
+reproduce the results"), these must be committed if this submission is used (all
+git-ignored here, so `git add -f`): the encoders `models/xsubj/checkpoints/{fc6,vmae8}_*`,
+their ridges `models/xsubj/checkpoints/ridge_{fc6,vmae8}/` and
+`ridge_subject_{fc6,vmae8}/` (`src.xsubj.submit` now saves the ridges per config; before,
+every config overwrote `ridge/`, Daniel's CLIP ridge; rankings unchanged), and the
+transfer models `work/xsubj_probe/model_sub0[1-4]_emb_train__clip-vitb32_s0.pt`.
 
 ## 5. Clean check of the member choice (no test data)
 
@@ -321,9 +325,7 @@ Paired on 408 recordings: top-1 +41 / -41 (p = 1.0), top-5 +33 / -12 (exact McNe
 p = 0.0025), rank better in 183, worse in 108 (Wilcoxon p = 4e-9). Chosen tau 5, 2, 2, 8
 in the four folds. On all four dev subjects with the final weights (optimistic, for the
 choice only) tau 2-5 is a plateau (top-1 31.4-32.1, top-5 66.2-68.1, mean rank 6.34-6.41;
-plain 30.4 / 63.0 / 7.65), so the submission uses tau = 3. Simpler variants were worse in
-a first, non-nested check: z-scoring each candidate's column (top-1 25.5) and a hard
-one-to-one assignment (Hungarian, 28.2). Sinkhorn changes the top video for about half of
+plain 30.4 / 63.0 / 7.65), so the submission uses tau = 3. Sinkhorn changes the top video for about half of
 the sub-05/06 recordings (47% / 52% unchanged).
 
 ## 9. Score fusion instead of rank fusion (18 Oct)

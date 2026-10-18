@@ -22,6 +22,7 @@ average reference (13.2% / 43.1% / 14.2 with the earlier 0.5-40 Hz band-pass + a
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 import joblib
 import numpy as np
@@ -91,10 +92,13 @@ def main():
             encoders.append((model.to(get_device()), {s: i for i, s in enumerate(ck["subject_list"])}))
         print(f"{len(encoders)} encoders: {' '.join(names)}")
     fs, tmin = data[0].fs, data[0].tmin
+    # ridge weights per config: configs/xsubj.yaml -> ridge/, configs/xsubj_fc6.yaml -> ridge_fc6/, ...
+    # (one shared folder would let each config overwrite the others' weights)
+    tag = Path(args.config).stem.removeprefix("xsubj")
     if args.model in ("ridge", "ensemble"):
         train = Trials([d for d in data if d.split == "trn"], bank, [])
         ridge = RidgeDecoder(cfg["ridge"], fs, tmin).fit(train.X, bank.emb[train.y])
-        path = resolve("models/xsubj/checkpoints/ridge/ridge.joblib")
+        path = resolve(f"models/xsubj/checkpoints/ridge{tag}/ridge.joblib")
         path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump({"model": ridge, "cfg": cfg}, path)
         print(f"saved {path}")
@@ -104,7 +108,7 @@ def main():
             if d.split == "trn":
                 tr = Trials([d], bank, [])
                 subject_ridge[d.subject] = RidgeDecoder(cfg["ridge"], fs, tmin).fit(tr.X, bank.emb[tr.y])
-        path = resolve("models/xsubj/checkpoints/ridge_subject/ridge_subject.joblib")
+        path = resolve(f"models/xsubj/checkpoints/ridge_subject{tag}/ridge_subject.joblib")
         path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump({"models": subject_ridge, "cfg": cfg}, path)
         print(f"saved {path} ({len(subject_ridge)} subjects)")
