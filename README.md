@@ -39,7 +39,7 @@ Main findings (details in the reports):
 - **Per-subject models matter**: a ridge on one subject's ~950 trials beats a pooled ridge on 5,650.
 - **Less preprocessing is better**: only a 40 Hz low-pass, label-free per-split normalisation and
   Euclidean alignment help.
-- **Sinkhorn re-ranking** uses that every candidate occurs once per test split (+16 points top-1). It is
+- **Sinkhorn re-ranking** uses that every candidate occurs once per test split. It is
   label-free, but a property of this benchmark.
 
 ## Reports
@@ -117,10 +117,4 @@ Feature extraction: `src/xsubj/video/clip_features.py` (CLIP), `src/xsubj/video/
 | `models/xsubj/checkpoints/infonce_{fc6,vmae8}/` | per-subject InfoNCE EEGNets, 6 subjects × 3 seeds each |
 | `submissions/` | the submitted rankings for sub-05 and sub-06 |
 
-## Rules followed
 
-- Training uses the training splits of all six subjects only. No test recording is used for training.
-- The labelled test splits of sub-01..04 are used only for validation and model selection, never as
-  templates for sub-05/06.
-- Normalisation of the test recordings (per-split mean removal, scaling, Euclidean alignment) and the
-  Sinkhorn re-ranking are unsupervised.
