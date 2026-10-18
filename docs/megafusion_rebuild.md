@@ -472,3 +472,47 @@ python -m src.test_matching --emb work/rsa_features/videomae_l8.npz
 
 So the averaging of the test recordings explains why test scores are higher than single-trial
 validation, but it leaves nothing to exploit in these ridges; nothing in fusion B changes.
+
+## 13. Unexplored data: EEG after 600 ms and the sound envelope (18 Oct, branch experiment/late-eeg-audio)
+
+All members decode 50-600 ms after onset; the recordings last 3 s. Two parts of the data
+were untested as decoders: the later EEG (does it follow the frame shown at that time?) and
+the loudness time course (in the RSA as brain-like as the best visual features, and
+independent of them). Daniel-style ridges (pooled + per-subject), preprocessing kept to 3 s:
+
+```bash
+python -m src.frame_features --stim-dir $D            # AlexNet fc6 / CLIP of the frames at 0, 0.5, ..., 2.5 s
+F=work/frame_features; R="python -m src.ridge_member --data-tmax 3.0"
+$R --emb work/rsa_features/alexnet_fc6.npz --tag _r3fc6                          # baseline on the 3 s data
+$R --emb $F/alexnet_fc6_t0.0.npz --tmin 0.05 --tmax 0.6 --tag _f0
+$R --emb $F/alexnet_fc6_t1.0.npz --tmin 1.05 --tmax 1.6 --tag _f1
+$R --emb $F/alexnet_fc6_t2.0.npz --tmin 2.05 --tmax 2.6 --tag _f2
+$R --emb $F/alexnet_fc6_t0.5.npz $F/alexnet_fc6_t1.0.npz $F/alexnet_fc6_t1.5.npz $F/alexnet_fc6_t2.0.npz \
+   --tmin 0.55 1.05 1.55 2.05 --tmax 1.1 1.6 2.1 2.6 --tag _late_fc6             # same with clip_t*.npz: _late_clip
+$R --emb work/rsa_features/low_loudness.npz --tmin 0.05 --tmax 2.95 --erp-bin 0.05 --tag _loud3
+$R --emb work/rsa_features/low_loudness.npz --tmin 0.05 --tmax 1.0 --erp-bin 0.02 --tag _loud1
+$R --emb work/loudness_onsets.npz --tmin 0.05 --tmax 2.95 --erp-bin 0.05 --tag _loudon   # positive loudness steps
+python -m src.loo_fusion_b_extra --tags _loud3 _loud1 _late_clip _late_fc6 _f0
+```
+
+Alone (sub-01..04; chance 1.0 / 4.9 / 51.5):
+
+| member | EEG window | top-1 | top-5 | mean rank |
+|---|---|---|---|---|
+| fc6 of the whole video (baseline) | 50-600 ms | 17.9 | 51.5 | 10.6 |
+| fc6 of the first frame | 50-600 ms | 19.9 | 54.2 | 10.9 |
+| fc6 of the frame at 1 s | 1.05-1.6 s | 2.0 | 8.1 | 39.8 |
+| fc6 of the frame at 2 s | 2.05-2.6 s | 1.5 | 6.6 | 43.3 |
+| frames at 0.5-2 s, combined: fc6 / CLIP | t + 50-600 ms | 2.0 / 2.9 | 9.8 / 12.0 | 37.3 / 36.7 |
+| loudness, whole recording / first second / onsets | 0.05-2.95 / 0.05-1 s | 1.2 / 2.0 / 2.5 | 8.3 / 6.4 / 8.6 | 33.9 / 34.9 / 44.5 |
+
+Added to fusion B (its weights fixed, the extra weight and tau chosen inside each fold; B
+36.76 / 69.61 / 5.71 with these fixed weights): the late members got weight 0 in all four
+folds; the first-frame member in three of four (top-1 +1/-6); loudness lowered top-1
+(+6/-16, p = 0.05). None is added.
+
+The EEG after 600 ms carries only a trace of the later frames (mean rank 40 vs 51.5
+chance): the information is in the response to the video onset, which is also where the
+first frame alone is as good a target as the whole video. Loudness is a real brain signal
+in the RSA (which compares all pairs of videos over many trials) but too coarse to pick one
+video out of 102 from one recording: it mainly separates loud from quiet videos.
