@@ -445,3 +445,30 @@ Caveats: Daniel's weights were fitted on these four dev subjects, so every varia
 containing his ensemble is optimistic on dev.
 The reliable gain over A is the mean rank; top-1 differences are within noise.
 Reproducing B needs his commit 9d62e5b (code and weights are on his branch).
+
+## 12. Adapting the ridges to the averaged test recordings: no gain (18 Oct)
+
+Test recordings behave like averages of ~2 repetitions (about twice the signal-to-noise,
+relatively less high-frequency power; `eeg_pipeline/README.md`). Tested on the ridge votes
+of Daniel's pipeline (pooled + per-subject ridge, the bulk of fusion B's weight), toward
+CLIP and VideoMAE-l8, setting chosen leave-one-subject-out:
+
+```bash
+python -m src.test_matching --emb models/xsubj/features/clip_vitb32.npz
+python -m src.test_matching --emb work/rsa_features/videomae_l8.npz
+```
+
+1. **Less regularisation for cleaner input** (cross-validated alpha x 0.01 ... 3): the best
+   factor is 0.3 for both targets (CLIP top-5 45.6 -> 47.6, VideoMAE-l8 mean rank 10.14 ->
+   9.60), close to the ~0.5 that halving the noise variance predicts for a ridge. The gain is
+   small: LOO-chosen, CLIP 15.9 / 45.6 / 12.45 -> 15.7 / 43.9 / 12.90 (n.s.), VideoMAE-l8
+   20.1 / 48.5 / 10.14 -> 20.1 / 48.0 / 9.75 (top-1 +14/-14, rank p = 0.025). The
+   cross-validated alpha is already close to optimal for the test recordings.
+2. **Matching the spectra, per split and label-free:** a lower low-pass (20, 12, 8 Hz on
+   both splits) does not help (VideoMAE-l8 mean rank 10.26 / 10.99 / 11.83 vs 10.14), and
+   whitening each split's spectrum hurts clearly (CLIP top-1 15.9 -> 10.5, VideoMAE-l8 20.1
+   -> 14.7): the higher frequencies carry stimulus-locked information, and flattening the
+   spectrum amplifies the noisy bands.
+
+So the averaging of the test recordings explains why test scores are higher than single-trial
+validation, but it leaves nothing to exploit in these ridges; nothing in fusion B changes.
