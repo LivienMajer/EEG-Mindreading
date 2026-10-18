@@ -233,3 +233,62 @@ McNemar p = 0.79), top-5 +18 / -21 (p = 0.75), rank better in 138, worse in 123 
 p = 0.55). Not significant on any measure, so the candidate stays without it. The sound
 information is not lost: in the RSA, loudness over time is as brain-like as the best
 visual features, but the visual members' EEG decoders seem to pick up most of it already.
+
+## 7. Time windows and CLIP's inner layers: no gain (18 Oct)
+
+Two ideas from the RSA, tested with one decoder type so that only the target or the EEG
+window changes: Daniel's ridge (`src.ridge_member`: pooled + per-subject ridge, as in his
+audio member; with the CLAP target it reproduces his CLAP rankings exactly).
+
+1. **Time hierarchy:** early AlexNet layers match the brain at ~105 ms, deep layers at
+   ~225 ms. Does a decoder of an early layer from the early EEG only add to the fusion?
+2. **CLIP's inner layers:** in the RSA, CLIP blocks 9 and 12 (r 0.032) are much more
+   brain-like than its output (0.026), close to fc6 (0.036). Could they replace AlexNet?
+
+```bash
+git show origin/feature/clip-lowlevel-forward-model:models/xsubj/features/clap.npz > work/clap_daniel.npz
+python -m eeg_pipeline.rsa_features --stim_dir $D --out_dir work/rsa_features --models clip   # branch feature/eeg-preprocessing
+F=work/rsa_features
+python -m src.ridge_member --emb work/clap_daniel.npz --tag _rclap        # check: = A_dclap (section 6)
+python -m src.ridge_member --emb $F/alexnet_conv2.npz --tmin 0.05 --tmax 0.15 --tag _rconv2e
+python -m src.ridge_member --emb $F/alexnet_conv2.npz --tag _rconv2
+python -m src.ridge_member --emb $F/alexnet_fc6.npz --tag _rfc6
+python -m src.ridge_member --emb $F/alexnet_fc6.npz --tmin 0.15 --tmax 0.35 --tag _rfc6m
+python -m src.ridge_member --emb work/clip_vitb32_daniel.npz --tag _rclip
+for l in 6 9 12; do python -m src.ridge_member --emb $F/clip_l$l.npz --tag _rclip$l; done
+python -m src.loo_extra_member --tags _rconv2e _rconv2 _rclip9 _rfc6
+```
+
+Each ridge member alone (sub-01..04 tst):
+
+| target, EEG window | top-1 | top-5 | mean rank |
+|---|---|---|---|
+| AlexNet fc6, 50-600 ms | **19.4** | **52.2** | **10.7** |
+| CLIP block 9, 50-600 ms | 16.9 | 49.5 | 11.4 |
+| CLIP output (Daniel's bank), 50-600 ms | 15.9 | 45.6 | 12.5 |
+| CLIP block 6 / block 12, 50-600 ms | 14.5 / 11.5 | 45.8 / 40.7 | 11.9 / 13.7 |
+| AlexNet conv2, 50-600 ms | 12.3 | 38.5 | 16.3 |
+| AlexNet fc6, 150-350 ms only | 10.5 | 31.6 | 17.0 |
+| AlexNet conv2, 50-150 ms only | 8.3 | 25.3 | 22.3 |
+
+- **Cutting the window hurts every target** (conv2 12.3 -> 8.3 top-1, fc6 19.4 -> 10.5):
+  the ridge already weighs every time point separately, so it uses the time hierarchy
+  on its own, and each layer carries information in both waves (in the RSA, fc6 matches
+  the brain at 105 ms almost as well as conv2).
+- **CLIP block 9 beats CLIP's output** but not fc6; neither difference is significant
+  (fc6 vs block 9: top-1 +52/-42, p = 0.35; rank p = 0.10. Block 9 vs output: top-1
+  +42/-38, p = 0.74; rank p = 0.09). So no reason to replace AlexNet, nor to retrain the
+  encoders toward block 9.
+
+Added to the candidate fusion (LOO as in section 6, extra weight searched over 0-9):
+
+| extra member | top-1 | top-5 | mean rank | paired vs candidate |
+|---|---|---|---|---|
+| none (candidate) | 29.41 | 63.24 | 7.87 | |
+| conv2, 50-150 ms | 27.21 | 63.73 | 7.71 | top-1 +11/-20 (p = 0.15), top-5 p = 0.87, rank p = 0.09 |
+| conv2, 50-600 ms | 29.41 | 60.05 | 7.80 | top-5 +12/-25 (p = 0.047, worse) |
+| CLIP block 9 | 28.92 | 61.76 | 7.62 | top-1 p = 0.85, top-5 p = 0.33, rank p = 0.19 |
+| fc6 ridge | 27.70 | 62.75 | 7.87 | top-1 p = 0.28, top-5 p = 0.85, rank p = 0.84 |
+
+No extra member helps; together with CLAP (section 6) and V-JEPA 2 (RSA), the fusion
+seems saturated: new targets reach the same EEG information the members already use.
